@@ -102,8 +102,8 @@ app.get('/api/auth/me', asyncRoute(async (request, response) => {
 app.post('/api/auth/register', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const { email, password, name, phone } = request.body ?? {};
-  if (!validEmail(email) || typeof password !== 'string' || password.length < 8 || typeof name !== 'string' || name.trim().length < 2) {
-    response.status(400).json({ error: 'invalid_registration', message: 'Indique um nome, email válido e palavra-passe com pelo menos 8 caracteres.' });
+  if (!validEmail(email) || typeof password !== 'string' || password.length < 6 || typeof name !== 'string' || name.trim().length < 2) {
+    response.status(400).json({ error: 'invalid_registration', message: 'Indique um nome, email válido e palavra-passe com pelo menos 6 caracteres.' });
     return;
   }
   try {

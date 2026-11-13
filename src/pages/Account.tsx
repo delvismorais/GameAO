@@ -33,8 +33,8 @@ export function Account() {
 
   const submitLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!emailValid(loginForm.email) || loginForm.password.trim().length < 8) {
-      showToast('Indique um email válido e uma palavra-passe com pelo menos 8 caracteres.', 'error');
+    if (!emailValid(loginForm.email) || loginForm.password.trim().length < 6) {
+      showToast('Indique um email válido e uma palavra-passe com pelo menos 6 caracteres.', 'error');
       return;
     }
     if (await login(loginForm.email, loginForm.password)) {
@@ -46,8 +46,8 @@ export function Account() {
 
   const submitRegister = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!registerForm.name.trim() || !emailValid(registerForm.email) || registerForm.password.trim().length < 8) {
-      showToast('Preencha o nome, um email válido e uma palavra-passe com pelo menos 8 caracteres.', 'error');
+    if (!registerForm.name.trim() || !emailValid(registerForm.email) || registerForm.password.trim().length < 6) {
+      showToast('Preencha o nome, um email válido e uma palavra-passe com pelo menos 6 caracteres.', 'error');
       return;
     }
     if (registerForm.password !== registerForm.confirm) {

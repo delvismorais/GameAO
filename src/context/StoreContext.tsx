@@ -227,7 +227,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const clearCompare = useCallback(() => setCompare([]), []);
 
   const login = useCallback(async (email: string, password: string) => {
-    if (!email.trim() || password.trim().length < 8) return false;
+    if (!email.trim() || password.trim().length < 6) return false;
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -241,7 +241,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
-    if (!name.trim() || !email.trim() || password.trim().length < 8) return false;
+    if (!name.trim() || !email.trim() || password.trim().length < 6) return false;
     const response = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
