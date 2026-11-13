@@ -3,7 +3,7 @@
  *
  * A taxa USD/AOA NÃO deve ser escrita diretamente nos componentes.
  * Este é o único valor por omissão; a taxa efetiva é gerida pelo
- * SettingsContext e pode ser alterada em /configuracoes.
+ * SettingsContext e pode ser alterada apenas no painel administrativo.
  */
 
 export interface ExchangeRateConfig {

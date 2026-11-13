@@ -117,7 +117,7 @@ export function Cart() {
               <p className="cart-totals__rate">
                 Taxa aplicada: 1 USD = {formatUsdAsAoa(rate, 1)}.
                 <br />
-                Pode alterar a taxa em <Link to="/configuracoes">Configurações</Link>.
+                A taxa aplicada é gerida internamente pela loja.
               </p>
               <Link to="/checkout" className="btn btn--primary btn--block">Finalizar Compra</Link>
               <p className="cart-totals__demo">Demonstração — não é processado qualquer pagamento real.</p>

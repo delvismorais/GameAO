@@ -21,7 +21,6 @@
     { "path": "/about-us", "title": "Sobre Nós" },
     { "path": "/contact-us", "title": "Contacte-nos" },
     { "path": "/faqs", "title": "Perguntas Frequentes" },
-    { "path": "/configuracoes", "title": "Configurações da Loja" },
     { "path": "/admin", "title": "Administração" },
     { "path": "/acompanhar-pedido", "title": "Acompanhar pedido" }
   ]

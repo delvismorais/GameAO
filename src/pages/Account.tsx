@@ -103,7 +103,6 @@ export function Account() {
             <Link to="/my-account/orders"><Icon name="cart" /> Encomendas <span>{orders.length}</span></Link>
             <Link to="/wishlist"><Icon name="heart" /> Lista de desejos</Link>
             <Link to="/compare"><Icon name="compare" /> Comparar produtos</Link>
-            <Link to="/configuracoes"><Icon name="category" /> Configurações</Link>
             <button type="button" onClick={() => { logout(); showToast('Sessão terminada.', 'info'); }}>
               <Icon name="close" /> Terminar sessão
             </button>

@@ -278,7 +278,6 @@ export function ShopView({ category }: ShopViewProps) {
           <li><Link to="/contact-us">Contacte-nos</Link></li>
           <li><Link to="/faqs">Perguntas Frequentes</Link></li>
           <li><Link to="/category/news">Notícias</Link></li>
-          <li><Link to="/configuracoes">Configurações da Loja</Link></li>
         </ul>
       </div>
     </div>

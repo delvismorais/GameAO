@@ -291,7 +291,7 @@ export const FAQ_ACCORDION = [
   },
   {
     q: 'Como contacto o apoio ao cliente?',
-    a: 'Pode utilizar o formulário da página Contacte-nos, enviar email para apoio@gameao.ao (demonstração) ou ligar para +244 900 000 000 (demonstração). Respondemos normalmente no mesmo dia útil.',
+    a: 'Pode utilizar o formulário da página Contacte-nos, enviar email para geral@gameao.shop ou ligar para 973 929 712. Respondemos normalmente no mesmo dia útil.',
   },
 ];
 
@@ -301,10 +301,9 @@ export const CONTACT_INFO = {
     { label: 'Sábado e domingo', value: '10:30 – 22:30' },
   ],
   phones: [
-    { label: 'Telemóvel', value: '+244 900 000 000 (demo)' },
-    { label: 'Linha de apoio', value: '+244 900 000 001 (demo)' },
+    { label: 'Telemóvel', value: '973 929 712' },
   ],
-  email: 'apoio@gameao.ao (demo)',
+  email: 'geral@gameao.shop',
   addresses: ['Luanda, Angola', 'Endereço de demonstração — a confirmar'],
 };
 

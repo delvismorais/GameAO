@@ -88,7 +88,6 @@ export function Footer() {
             <li><Link to="/contact-us">Contacte-nos</Link></li>
             <li><Link to="/faqs">Perguntas Frequentes</Link></li>
             <li><Link to="/acompanhar-pedido">Acompanhar pedido</Link></li>
-            <li><Link to="/configuracoes">Configurações</Link></li>
           </ul>
         </div>
       </div>
@@ -96,7 +95,6 @@ export function Footer() {
       <div className="site-footer__bottom">
         <div className="container site-footer__bottom-inner">
           <p>© {new Date().getFullYear()} GameAO. Todos os direitos reservados.</p>
-          <p className="footer-demo">Taxa USD/AOA configurável em Configurações.</p>
         </div>
       </div>
     </footer>
