@@ -111,6 +111,7 @@
 ## 15. Acompanhamento, entrega e notificações
 
 - [x] Criar Acompanhar Pedido no estilo GameAO com número `GA` e email de verificação; apresentar número, cliente, produtos, total, estado do pedido e pagamento, sem expor dados de outra encomenda.
+- [x] Ao alterar o estado no painel administrativo, guardar o histórico, auditar a operação e criar tentativas de notificação por email e WhatsApp para o cliente; cada canal fica explicitamente como enviado, falhado ou não configurado.
 - [ ] Criar linha temporal com os estados reais registados no banco e manter a mesma informação disponível na área do cliente.
 - [ ] Modelar entrega para produtos digitais, códigos/licenças, entrega manual e futura entrega automática; registar disponibilidade, associação à encomenda, entrega única e histórico; não inventar códigos ou licenças.
 - [ ] Implementar notificações para registo, recuperação, confirmação de encomenda, pagamento confirmado/recusado, processamento, conclusão, cancelamento e reembolso; notificações administrativas para nova encomenda/cliente, pagamentos, cancelamento, stock baixo e esgotado.

@@ -2724,3 +2724,10 @@
 @media (max-width: 640px) {
   .admin-invoice-actions { grid-column: 2; justify-content: flex-start; }
 }
+
+.admin-order-status { display: grid; gap: 4px; min-width: 170px; }
+.admin-order-status span { color: var(--muted); font-size: 11px; }
+.admin-order-status select { min-height: 32px; padding: 5px 8px; border: 1px solid #d7dde8; border-radius: 4px; background: #fff; font: inherit; font-size: 12px; }
+@media (max-width: 640px) {
+  .admin-order-status { grid-column: 2; min-width: 0; }
+}

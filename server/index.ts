@@ -8,6 +8,7 @@ import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
 import { createInvoicePdf, type InvoiceTemplate } from './invoices';
+import { notifyOrderStatusChanged, type OrderStatus } from './notifications';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -307,6 +308,25 @@ app.get('/api/admin/orders', asyncRoute(async (request, response) => {
   if (!user) return;
   const [orders] = await getPool().query<any[]>(`SELECT o.*, COUNT(i.id) AS item_count FROM shop_orders o LEFT JOIN shop_order_items i ON i.order_id = o.id GROUP BY o.id ORDER BY o.created_at DESC LIMIT 200`);
   response.json({ orders });
+}));
+
+const ORDER_STATUSES: OrderStatus[] = ['awaiting_payment', 'payment_confirmed', 'processing', 'ready_for_delivery', 'completed', 'cancelled', 'refunded'];
+
+app.patch('/api/admin/orders/:orderNumber/status', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const nextStatus = String(request.body?.status ?? '') as OrderStatus;
+  if (!ORDER_STATUSES.includes(nextStatus)) { response.status(400).json({ error: 'invalid_status', message: 'Estado de pedido inválido.' }); return; }
+  const found = await findOrder(String(request.params.orderNumber));
+  if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  const previousStatus = String(found.order.status);
+  if (previousStatus === nextStatus) { response.json({ order: found.order, notifications: { email: 'not_sent', whatsapp: 'not_sent' } }); return; }
+  await getPool().execute(`UPDATE shop_orders SET status = ? WHERE id = ?`, [nextStatus, found.order.id]);
+  await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, ?, ?, ?)`, [found.order.id, previousStatus, nextStatus, request.body?.note ?? null, admin.id]);
+  const notifications = await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, nextStatus);
+  await recordAudit(admin.id, 'order.status_changed', 'shop_order', String(found.order.id), { from: previousStatus, to: nextStatus, notifications });
+  response.json({ orderNumber: found.order.order_number, status: nextStatus, notifications });
 }));
 
 app.get('/api/admin/orders/:orderNumber/invoice', asyncRoute(async (request, response) => { await deliverInvoice(request, response, true); }));

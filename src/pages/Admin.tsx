@@ -21,6 +21,10 @@ type AdminProduct = {
   image: string;
 };
 type AdminOrder = { order_number: string; customer_name: string; customer_email: string; total_aoa: number; status: string; payment_status: string; created_at: string; item_count: number };
+const ORDER_STATUS_OPTIONS = [
+  ['awaiting_payment', 'A aguardar pagamento'], ['payment_confirmed', 'Pagamento confirmado'], ['processing', 'Em processamento'],
+  ['ready_for_delivery', 'Pronta para entrega'], ['completed', 'Concluída'], ['cancelled', 'Cancelada'], ['refunded', 'Reembolsada'],
+] as const;
 
 const EMPTY_FORM = {
   name: '',
@@ -110,6 +114,19 @@ export function Admin() {
     if (response.ok) await load();
   };
 
+  const updateOrderStatus = async (order: AdminOrder, status: string) => {
+    const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.order_number)}/status`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status }),
+    });
+    if (response.ok) {
+      const data = await response.json() as { notifications?: { email: string; whatsapp: string } };
+      setOrders((current) => current.map((item) => item.order_number === order.order_number ? { ...item, status } : item));
+      const email = data.notifications?.email === 'sent' ? 'email enviado' : 'email não configurado';
+      const whatsapp = data.notifications?.whatsapp === 'sent' ? 'WhatsApp enviado' : 'WhatsApp não configurado';
+      setMessage(`Pedido ${order.order_number} atualizado; ${email}, ${whatsapp}.`);
+    } else setMessage('Não foi possível atualizar o estado do pedido.');
+  };
+
   const saveRate = async (event: React.FormEvent) => {
     event.preventDefault();
     const response = await fetch('/api/admin/settings/exchange-rate', {
@@ -164,7 +181,7 @@ export function Admin() {
                 <article key={order.order_number}>
                   <div><strong>{order.order_number}</strong><small>{order.customer_name} · {order.customer_email}</small></div>
                   <span>{new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2 }).format(Number(order.total_aoa))} Kz</span>
-                  <small>{order.status} · {order.payment_status}</small>
+                  <label className="admin-order-status"><span>Estado</span><select value={order.status} onChange={(event) => void updateOrderStatus(order, event.target.value)}>{ORDER_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <div className="admin-invoice-actions"><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=classic`} download>Clássica</a><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=modern`} download>Moderna</a></div>
                 </article>
               ))}
