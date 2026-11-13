@@ -24,16 +24,15 @@ export function Faq() {
         <section className="faq-accordion">
           <h2 className="section-heading__title">Segunda versão das Perguntas Frequentes</h2>
           <p className="faq-accordion__intro">
-            Clique numa pergunta para ver a resposta. As informações refletem a fase de
-            demonstração da loja.
+            Clique numa pergunta para ver a resposta. As informações são geridas pela equipa
+            GameAO e podem ser atualizadas nas configurações de conteúdo.
           </p>
           <Accordion items={FAQ_ACCORDION} />
         </section>
 
         <div className="faq-note">
           <strong>Nota:</strong> os prazos, métodos de entrega e contactos apresentados são
-          ilustrativos e serão confirmados com os fornecedores e a equipa antes da abertura da loja
-          definitiva.
+          configuráveis pela equipa GameAO e devem ser confirmados antes de qualquer operação comercial.
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ export const DEFAULT_EXCHANGE_RATE: ExchangeRateConfig = {
   usdToAoa: 913,
   source: 'Banco Nacional de Angola (BNA)',
   updatedAt: '2026-11-13',
-  note: 'Valor configurável para esta demonstração; não é uma cotação em tempo real.',
+  note: 'Valor configurável no painel; não é uma cotação automática em tempo real.',
 };
 
 export const STORAGE_KEYS = {
@@ -44,5 +44,5 @@ export const STORE_INFO = {
   locale: 'pt-AO',
   country: 'Angola',
   demoNotice:
-    'Conteúdos de demonstração. Os dados da loja, contactos e artigos são editáveis e serão substituídos pelos definitivos.',
+    'Conteúdos iniciais geridos pelo painel administrativo. Os dados da loja, contactos e artigos podem ser atualizados sem alterar o código.',
 };

@@ -18,8 +18,7 @@ export function Footer() {
             <img src="/assets/logo.png" alt="GameAO" />
           </Link>
           <p>
-            {STORE_INFO.tagline} Reconstrução de demonstração do template GameShop, com preços em
-            kwanzas e conteúdos em português de Angola.
+            {STORE_INFO.tagline} com preços em kwanzas e conteúdos em português de Angola.
           </p>
           <ul className="footer-contact">
             <li>{CONTACT_INFO.email}</li>
@@ -31,7 +30,7 @@ export function Footer() {
               <button
                 key={social.label}
                 type="button"
-                onClick={() => showToast('As redes sociais serão configuradas na fase seguinte.', 'info')}
+                onClick={() => showToast('As redes sociais serão geridas nas Configurações.', 'info')}
                 aria-label={social.label}
               >
                 <Icon name={social.icon} />
@@ -96,7 +95,7 @@ export function Footer() {
       <div className="site-footer__bottom">
         <div className="container site-footer__bottom-inner">
           <p>© {new Date().getFullYear()} GameAO. Todos os direitos reservados.</p>
-          <p className="footer-demo">Demonstração — sem pagamentos reais. Taxa configurável em Configurações.</p>
+          <p className="footer-demo">Taxa USD/AOA configurável em Configurações.</p>
         </div>
       </div>
     </footer>

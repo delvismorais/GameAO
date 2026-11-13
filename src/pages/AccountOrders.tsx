@@ -16,7 +16,7 @@ export function AccountOrders() {
           icon="🔒"
           action={<Link to="/my-account" className="btn btn--primary">Entrar na conta</Link>}
         >
-          O histórico de encomendas está associado à sua conta de demonstração.
+          Inicie sessão para consultar o histórico associado à sua conta.
         </EmptyState>
       </PageShell>
     );

@@ -17,8 +17,7 @@ export function Contact() {
       return;
     }
     setSent(true);
-    setForm({ name: '', email: '', subject: '', message: '' });
-    showToast('Mensagem registada (demonstração). Obrigado!');
+    showToast('O formulário foi validado, mas o serviço de atendimento ainda não está configurado.', 'info');
   };
 
   return (
@@ -52,8 +51,7 @@ export function Contact() {
               ))}
             </div>
             <p className="contact-demo">
-              <Icon name="clock" /> Dados de demonstração, editáveis. Nenhum contacto real é usado
-              nesta fase.
+              <Icon name="clock" /> Os dados de contacto são geridos no painel administrativo.
             </p>
           </aside>
 
@@ -61,8 +59,8 @@ export function Contact() {
             <h2>Envie-nos uma mensagem</h2>
             {sent && (
               <div className="form-success">
-                Mensagem registada. Nesta demonstração não é enviado email real; a confirmação
-                aparecerá aqui.
+                O formulário foi validado. A mensagem ainda não foi enviada porque o serviço de
+                atendimento não está configurado.
               </div>
             )}
             <label className="field">

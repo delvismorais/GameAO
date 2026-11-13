@@ -43,6 +43,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     writeStorage(STORAGE_KEYS.settings, config);
   }, [config]);
 
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/settings/exchange-rate')
+      .then((response) => response.ok ? response.json() as Promise<ExchangeRateConfig> : null)
+      .then((serverConfig) => { if (active && serverConfig) setConfig((current) => sanitizeConfig({ ...current, ...serverConfig })); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
   const updateConfig = useCallback((patch: Partial<ExchangeRateConfig>) => {
     setConfig((current) => sanitizeConfig({ ...current, ...patch }));
   }, []);

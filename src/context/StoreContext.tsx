@@ -96,10 +96,10 @@ interface StoreContextValue {
   clearCompare: () => void;
 
   user: User | null;
-  login: (email: string, password: string) => boolean;
-  register: (name: string, email: string, password: string) => boolean;
-  logout: () => void;
-  updateProfile: (patch: Partial<User>) => void;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  updateProfile: (patch: Partial<User>) => Promise<boolean>;
 
   orders: Order[];
   placeOrder: (customer: Customer, note: string, rate: number) => Order;
@@ -133,9 +133,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [compare, setCompare] = useState<string[]>(() =>
     readStorage<string[]>(STORAGE_KEYS.compare, []),
   );
-  const [user, setUser] = useState<User | null>(() =>
-    readStorage<User | null>(STORAGE_KEYS.user, null),
-  );
+  const [user, setUser] = useState<User | null>(null);
   const [orders, setOrders] = useState<Order[]>(() =>
     readStorage<Order[]>(STORAGE_KEYS.orders, []),
   );
@@ -153,6 +151,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => writeStorage(STORAGE_KEYS.orders, orders), [orders]);
   useEffect(() => writeStorage(STORAGE_KEYS.reviews, reviews), [reviews]);
   useEffect(() => writeStorage(STORAGE_KEYS.comments, comments), [comments]);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : { user: null }))
+      .then((data: { user: User | null }) => {
+        if (active) setUser(data.user);
+      })
+      .catch(() => {
+        if (active) setUser(null);
+      });
+    return () => { active = false; };
+  }, []);
 
   const addToCart = useCallback((productId: string, qty = 1) => {
     setCart((current) => {
@@ -215,42 +226,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const clearCompare = useCallback(() => setCompare([]), []);
 
-  const login = useCallback((email: string, password: string) => {
-    if (!email.trim() || password.trim().length < 4) return false;
-    const saved = readStorage<{ name: string; email: string; phone: string } | null>(
-      STORAGE_KEYS.account,
-      null,
-    );
-    const sameAccount = saved?.email.toLowerCase() === email.trim().toLowerCase();
-    const nameFromEmail = email.split('@')[0].replace(/[._-]+/g, ' ');
-    setUser((current) => ({
-      name: sameAccount
-        ? saved!.name
-        : current?.name || nameFromEmail.replace(/\b\w/g, (c) => c.toUpperCase()),
-      email: email.trim(),
-      phone: sameAccount ? saved!.phone : current?.phone || '',
-    }));
-    return true;
-  }, []);
-
-  const register = useCallback((name: string, email: string, password: string) => {
-    if (!name.trim() || !email.trim() || password.trim().length < 4) return false;
-    const account = { name: name.trim(), email: email.trim(), phone: '' };
-    writeStorage(STORAGE_KEYS.account, account);
-    setUser(account);
-    return true;
-  }, []);
-
-  const logout = useCallback(() => setUser(null), []);
-
-  const updateProfile = useCallback((patch: Partial<User>) => {
-    setUser((current) => {
-      if (!current) return current;
-      const next = { ...current, ...patch };
-      writeStorage(STORAGE_KEYS.account, next);
-      return next;
+  const login = useCallback(async (email: string, password: string) => {
+    if (!email.trim() || password.trim().length < 8) return false;
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, password }),
     });
+    if (!response.ok) return false;
+    const data = await response.json() as { user: User };
+    setUser(data.user);
+    return true;
   }, []);
+
+  const register = useCallback(async (name: string, email: string, password: string) => {
+    if (!name.trim() || !email.trim() || password.trim().length < 8) return false;
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name, email, password }),
+    });
+    if (!response.ok) return false;
+    const data = await response.json() as { user: User };
+    setUser(data.user);
+    return true;
+  }, []);
+
+  const logout = useCallback(async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
+    setUser(null);
+  }, []);
+
+  const updateProfile = useCallback(async (patch: Partial<User>) => {
+    if (!user) return false;
+    const response = await fetch('/api/account/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ ...user, ...patch }),
+    });
+    if (!response.ok) return false;
+    const data = await response.json() as { user: User };
+    setUser(data.user);
+    return true;
+  }, [user]);
 
   const cartLines = useMemo(
     () =>

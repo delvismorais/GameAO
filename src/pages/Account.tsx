@@ -31,67 +31,69 @@ export function Account() {
 
   const emailValid = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
 
-  const submitLogin = (event: React.FormEvent) => {
+  const submitLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!emailValid(loginForm.email) || loginForm.password.trim().length < 4) {
-      showToast('Indique um email válido e uma palavra-passe com pelo menos 4 caracteres.', 'error');
+    if (!emailValid(loginForm.email) || loginForm.password.trim().length < 8) {
+      showToast('Indique um email válido e uma palavra-passe com pelo menos 8 caracteres.', 'error');
       return;
     }
-    if (login(loginForm.email, loginForm.password)) {
-      showToast('Sessão iniciada (demonstração).');
+    if (await login(loginForm.email, loginForm.password)) {
+      showToast('Sessão iniciada.');
     } else {
       showToast('Não foi possível iniciar sessão. Verifique os dados.', 'error');
     }
   };
 
-  const submitRegister = (event: React.FormEvent) => {
+  const submitRegister = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!registerForm.name.trim() || !emailValid(registerForm.email) || registerForm.password.trim().length < 4) {
-      showToast('Preencha o nome, um email válido e uma palavra-passe com pelo menos 4 caracteres.', 'error');
+    if (!registerForm.name.trim() || !emailValid(registerForm.email) || registerForm.password.trim().length < 8) {
+      showToast('Preencha o nome, um email válido e uma palavra-passe com pelo menos 8 caracteres.', 'error');
       return;
     }
     if (registerForm.password !== registerForm.confirm) {
       showToast('As palavras-passe não coincidem.', 'error');
       return;
     }
-    if (register(registerForm.name, registerForm.email, registerForm.password)) {
-      showToast('Conta criada com sucesso (demonstração).');
+    if (await register(registerForm.name, registerForm.email, registerForm.password)) {
+      showToast('Conta criada com sucesso.');
       setProfile({ name: registerForm.name, email: registerForm.email, phone: '' });
+    } else {
+      showToast('Não foi possível criar a conta. O email pode já estar registado.', 'error');
     }
   };
 
-  const submitLost = (event: React.FormEvent) => {
+  const submitLost = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!emailValid(lostEmail)) {
       showToast('Indique um email válido.', 'error');
       return;
     }
-    setLostSent(true);
-    showToast('Pedido registado. Nesta demonstração não é enviado email real.', 'info');
+    const response = await fetch('/api/auth/password-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: lostEmail }),
+    });
+    if (response.ok) {
+      setLostSent(true);
+      showToast('Se a conta existir, receberá instruções por email.', 'info');
+    } else {
+      showToast('A recuperação de palavra-passe ainda não está disponível porque o serviço de email não foi configurado.', 'error');
+    }
   };
 
-  const submitProfile = (event: React.FormEvent) => {
+  const submitProfile = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!profile.name.trim() || !emailValid(profile.email)) {
       showToast('Indique o nome e um email válido.', 'error');
       return;
     }
-    updateProfile(profile);
-    showToast('Dados pessoais atualizados.');
+    if (await updateProfile(profile)) showToast('Dados pessoais atualizados.');
+    else showToast('Não foi possível atualizar os dados pessoais.', 'error');
   };
 
   return (
     <PageShell crumbs={[{ label: 'Minha Conta' }]}>
       <h1 className="page-title">Minha Conta</h1>
-
-      <div className="account-demo-notice">
-        <Icon name="user" />
-        <span>
-          <strong>Conta de demonstração.</strong> Não existe autenticação real: os dados de perfil
-          e as encomendas ficam guardados apenas neste dispositivo. A autenticação será ligada
-          numa fase posterior.
-        </span>
-      </div>
 
       {user ? (
         <div className="account-layout">
@@ -205,7 +207,7 @@ export function Account() {
           {mode === 'lost' && (
             <form className="auth-form" onSubmit={submitLost} noValidate>
               <h2>Recuperar palavra-passe</h2>
-              <p>Indique o email associado à conta. Nesta demonstração não é enviado qualquer email.</p>
+              <p>Indique o email associado à conta. Se o serviço de email estiver configurado, receberá instruções para definir uma nova palavra-passe.</p>
               <label className="field">
                 <span>Email *</span>
                 <input type="email" value={lostEmail} onChange={(event) => setLostEmail(event.target.value)} autoComplete="email" />

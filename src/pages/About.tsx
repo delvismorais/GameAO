@@ -16,10 +16,9 @@ export function About() {
               sobre cada jogo.
             </p>
             <p>
-              Esta versão é uma reconstrução de demonstração do template GameShop. O objetivo é
-              preservar a experiência visual e funcional da referência e, ao mesmo tempo, preparar
-              a base para a loja definitiva. A taxa USD/AOA é configurável e todos os preços se
-              atualizam automaticamente.
+              A GameAO preserva uma experiência visual inspirada no GameShop e está a evoluir para
+              uma plataforma administrável de raiz. A taxa USD/AOA é configurável e todos os preços
+              atualizam-se automaticamente.
             </p>
             <p className="about-intro__note">
               Os nomes comerciais, capas e marcas apresentados pertencem aos respetivos titulares.

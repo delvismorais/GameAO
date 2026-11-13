@@ -2,7 +2,7 @@
 
 ## 1. Objetivo e âmbito
 
-Reconstruir com fidelidade visual, estrutural e funcional o template WordPress/WooCommerce **GameShop (TemplateMonster #365728)**, usando como referência a demonstração oficial `https://hex-wp.com/gameshop/` e, com prioridade, a **Homepage 2** (`/homepage-2-visual-builder/`). A única localização obrigatória nesta fase é: interface integralmente em português de Angola, preços em kwanzas (AOA/Kz) e conteúdos descritivos em português. Não há pagamentos reais, integrações com fornecedores nem funcionalidades comerciais adicionais.
+Reconstruir e evoluir com fidelidade visual, estrutural e funcional o template WordPress/WooCommerce **GameShop (TemplateMonster #365728)**, usando como referência a demonstração oficial `https://hex-wp.com/gameshop/` e, com prioridade, a **Homepage 2** (`/homepage-2-visual-builder/`). A interface permanece em português de Angola, os preços em kwanzas (AOA/Kz) e os produtos mantêm o preço-base em USD com taxa configurável. A nova fase transforma a base visual numa plataforma operacional: servidor, base de dados persistente, autenticação própria, painel administrativo ligado aos mesmos dados da loja, encomendas, acompanhamento, SEO e infraestrutura. Pagamentos ficam desacoplados e pendentes de fornecedor e credenciais sandbox; nenhuma confirmação de pagamento será simulada.
 
 A análise da referência foi feita página a página (Homepage 1 e 2, Loja, categorias, produto, carrinho, checkout, wishlist, comparação, conta, notícias, artigo, Sobre, Contactos, FAQs), em desktop (1440×900) e mobile (390×844), com extração do HTML, das folhas de estilo do tema e de todos os recursos visuais.
 
@@ -23,16 +23,35 @@ A análise da referência foi feita página a página (Homepage 1 e 2, Loja, cat
 
 ## 3. Stack e arquitetura
 
-- **React 19 + TypeScript + Vite 7 + React Router 7**, SPA estática (sem backend nesta fase). O carrinho, favoritos, comparação, conta de demonstração, avaliações e encomendas persistem em `localStorage`.
+- **React 19 + TypeScript + Vite 7 + React Router 7**, mantendo os componentes e CSS existentes. O backend será servido pelo mesmo projeto através do servidor Webdev; a base de dados MySQL gerida será a fonte de verdade para utilizadores, produtos, conteúdos, carrinho, encomendas, pagamentos, notificações e auditoria. O `localStorage` fica apenas como apoio transitório/offline e não substitui os dados comerciais persistentes.
 - **Sem Tailwind**: CSS próprio organizado por camadas (`base`, `layout`, `components`, `pages`), com as variáveis exatas do tema original. Regras específicas do WooCommerce (formulários, tabelas, separadores, estrelas, avisos) são recriadas com os mesmos valores visuais da folha `woocommerce.css` do tema.
-- **Dados separados da apresentação**: `src/data/products.ts` (15 produtos com preço-base em USD), `src/data/posts.ts` (9 artigos), `src/data/site.ts` (menus, vantagens, slides, banners, pré-reservas, contactos de demonstração, FAQs, equipa).
+- **Dados separados da apresentação na migração**: os dados atuais de `src/data/products.ts`, `src/data/posts.ts` e `src/data/site.ts` serão preservados como seed/import inicial; depois, os componentes passam a ler os registos da base de dados e mantêm fallback controlado apenas durante a migração.
 - **Gestão centralizada de preços**: `src/config/store.ts` contém a configuração por omissão (taxa USD/AOA 913,000, fonte BNA, data 13/11/2026, nota de demonstração). `SettingsContext` lê/guarda a taxa em `localStorage` e propaga-a a toda a árvore. `src/lib/pricing.ts` expõe `usdToAoa`, `formatAoa` e `formatUsdAsAoa`; **nenhum preço de produto em AOA é escrito à mão**. O componente `Price` é a única via de apresentação monetária. Alterar a taxa na página `/configuracoes` recalcula imediatamente loja, cartões, carrinho, descontos, comparação e checkout.
-- **Estado da loja**: `StoreContext` gere carrinho, wishlist, comparação, utilizador e encomendas; os totais são derivados em tempo de render, pelo que reagem automaticamente à taxa.
+- **Estado da loja**: `StoreContext` será adaptado para consultar e mutar dados via API/tRPC do servidor. Carrinho, wishlist, conta e encomendas passam a ter persistência por utilizador/sessão; os totais continuam derivados em tempo de render e reagem à taxa configurável guardada no backend.
 - **Rotas**: `/`, `/homepage-2`, `/shop`, `/product-category/:slug` (game, xbox, playstation, pc, featured), `/product/:slug`, `/cart`, `/checkout`, `/checkout/confirmacao`, `/wishlist`, `/compare`, `/my-account`, `/my-account/orders`, `/category/news`, `/blog/:slug`, `/about-us`, `/contact-us`, `/faqs`, `/configuracoes`, 404.
 - **Componentes partilhados**: Header (desktop/mobile, pesquisa, conta, favoritos, carrinho), CartDrawer, Footer, Breadcrumbs, Price, Rating, Quantity, Tabs, Accordion, Pagination, ProductCard, ProductGrid, ProductCarousel, DealCard, HeroSlider, PromoGlider, FeatureBoxes, PreorderBanner, BlogCard/BlogSection, Toast.
 - **Imagens**: recursos originais da demonstração descarregados para `public/assets/` (capas, banners, fotografias, ícones, logótipo, fonte de ícones `fontsite` e Rubik). A limitação de licenciamento das capas/banners de terceiros é registada no relatório final, sem substituições silenciosas.
 
-## 4. Estrutura de pastas
+## 4.1. Evolução operacional aprovada
+
+- **Servidor e base de dados**: ativar `features.server` e `features.database` da Manus. Usar migrações determinísticas, aditivas e versionadas; preservar os produtos, conteúdos e imagens atuais durante a importação.
+- **Autenticação própria**: contas com email, palavra-passe com hashing seguro, recuperação de palavra-passe, sessões protegidas, validação de campos, proteção contra tentativas abusivas e separação rigorosa entre clientes e administradores. Não transportar credenciais do repositório MD Recargas.
+- **Modelo de negócio**: manter o catálogo atual de videojogos do GameAO na primeira migração. O modelo deverá suportar stock, disponibilidade, categorias, plataformas, etiquetas, galerias, produtos relacionados, destaque e variantes futuras sem trocar a aparência dos cartões.
+- **Painel administrativo**: dashboard e CRUD real para produtos, categorias, imagens, banners, homepage, artigos, páginas institucionais, encomendas, clientes, avaliações, cupões, configurações e administradores/permissões. Cada alteração deve refletir-se na loja através da mesma base de dados.
+- **Encomendas**: checkout ligado ao backend, estados distintos de encomenda e pagamento, histórico cronológico, notas internas, acompanhamento público protegido por número não previsível mais email/dado de verificação, e área de cliente.
+- **Pagamentos**: criar uma interface de adaptadores e registos de transação, mas não ativar um fornecedor até o utilizador o indicar e as credenciais sandbox existirem. Webhooks deverão validar assinatura, ser idempotentes e nunca confiar apenas na página de retorno.
+- **SEO e infraestrutura**: sitemap dinâmico, robots, títulos/descrições/canónicas/Open Graph por rota pública, segurança de endpoints, logs sem dados sensíveis, exportação/backup operacional e otimização sem redesenhar a interface.
+
+## 4.2. Ordem de implementação
+
+1. Fundação do servidor, base de dados, migrações, seed preservador e camada de API.
+2. Autenticação própria, sessão, perfis, permissões e primeiro administrador através de inicialização segura.
+3. Produtos, categorias, media, configurações e painel ligado à homepage/loja.
+4. Clientes, carrinho persistente, encomendas, checkout e acompanhamento.
+5. Adaptadores de pagamento e integração do fornecedor escolhido em sandbox.
+6. Blog, páginas, notificações, SEO, auditoria, backup/exportação, desempenho e testes de regressão visual.
+
+## 5. Estrutura de pastas
 
 ```
 src/
@@ -52,7 +71,7 @@ public/
   manus-routes.json          Manifesto de rotas
 ```
 
-## 5. Comportamento por página
+## 6. Comportamento por página
 
 - **Homepage 1**: hero Batman/Forza/Titanfall; 4 vantagens brancas sobrepostas (-150px); Jogos em Destaque com abas; Ofertas da Semana com contagem decrescente; banners Mortal Kombat/Overwatch 2; pré-reserva Assassin's Creed; Jogos Recentes (10); Notícias Recentes (4); rodapé.
 - **Homepage 2**: hero Xbox Game Pass/League of Legends/The Witcher 3; vantagens em cartões escuros; restantes secções equivalentes com banners Doom Eternal/Assassin's Creed 3 e pré-reserva Uncharted 4; área de conteúdo escura.
@@ -64,6 +83,6 @@ public/
 - **Blog/Institucionais**: listagem paginada, artigo com comentários e relacionados, Sobre, Contactos com validação, FAQs expansíveis.
 - **Configurações**: taxa USD/AOA, fonte e data no formato DD/MM/AAAA, pré-visualização de conversão, reposição da taxa BNA por omissão.
 
-## 6. Responsividade e acessibilidade
+## 7. Responsividade e acessibilidade
 
 Breakpoints: 1600, 1440, 1200, 1024, 768, 480. Em ≤1024: menu hambúrguer, barra inferior fixa (Categorias, Pesquisar, Desejos, Carrinho), grelha de 2 cartões em mobile, sidebar da loja em gaveta, hero 480:300. Sem scroll horizontal; foco visível; `aria-label` em ícones; navegação por teclado nos menus; `prefers-reduced-motion` desativa autoplay e transições longas.
