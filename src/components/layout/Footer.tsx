@@ -87,6 +87,7 @@ export function Footer() {
             <li><Link to="/about-us">Sobre Nós</Link></li>
             <li><Link to="/contact-us">Contacte-nos</Link></li>
             <li><Link to="/faqs">Perguntas Frequentes</Link></li>
+            <li><Link to="/acompanhar-pedido">Acompanhar pedido</Link></li>
             <li><Link to="/configuracoes">Configurações</Link></li>
           </ul>
         </div>

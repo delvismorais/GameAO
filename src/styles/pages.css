@@ -2704,3 +2704,23 @@
 .admin-empty h1 { margin-top:0; }
 @media (max-width:1100px) { .admin-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); } .admin-grid { grid-template-columns:1fr; } }
 @media (max-width:640px) { .admin-head { align-items:flex-start; flex-direction:column; } .admin-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-card { padding:18px; } .admin-products-table article { grid-template-columns:44px minmax(0,1fr); } .admin-products-table img { width:44px; height:58px; } .admin-products-table > article > span,.admin-products-table > article > button { grid-column:2; justify-self:start; } }
+
+.admin-orders-card { margin: 0 0 22px; }
+.admin-invoice-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.tracking-page { max-width: 860px; margin: 0 auto; }
+.tracking-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 14px; align-items: end; margin: 24px 0; padding: 22px; background: var(--surface-soft); border: 1px solid var(--line-light); }
+.tracking-error { padding: 14px 16px; border-left: 3px solid var(--primary); color: var(--primary); background: #fff4ef; }
+.tracking-result { border: 1px solid var(--line-light); background: #fff; padding: 24px; box-shadow: var(--shadow-soft); }
+.tracking-result > header { display:flex; justify-content:space-between; align-items:center; gap:16px; border-bottom:1px solid var(--line-light); padding-bottom:16px; }
+.tracking-result header div { display:grid; gap:4px; }
+.tracking-result header span:first-child { color:var(--muted); font-size:12px; }
+.tracking-result header strong { color:var(--primary); font-size:22px; }
+.tracking-items { margin: 20px 0; }
+.tracking-items > div { display:grid; grid-template-columns:48px 1fr auto; align-items:center; gap:12px; border-bottom:1px solid var(--line-light); padding:10px 0; }
+.tracking-items img { width:48px; height:64px; object-fit:cover; }
+.tracking-total { display:flex; justify-content:space-between; padding:18px 0; font-size:18px; }
+.tracking-total strong { color:var(--primary); }
+@media (max-width: 700px) { .tracking-form { grid-template-columns:1fr; } }
+@media (max-width: 640px) {
+  .admin-invoice-actions { grid-column: 2; justify-content: flex-start; }
+}

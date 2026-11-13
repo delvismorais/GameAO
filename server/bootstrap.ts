@@ -1,21 +1,28 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { RowDataPacket } from 'mysql2/promise';
 import { CATEGORIES, PRODUCTS } from '../src/data/products';
 import { POSTS } from '../src/data/posts';
 import { getPool, hasDatabaseUrl, withConnection } from './db';
 
-const migrationPath = path.resolve(process.cwd(), 'server/migrations/0001_platform_foundation.sql');
-
 async function runMigration(): Promise<void> {
-  const sql = await readFile(migrationPath, 'utf8');
-  const statements = sql
-    .split(';')
-    .map((statement) => statement.trim())
-    .filter(Boolean);
   const connection = await getPool().getConnection();
   try {
-    for (const statement of statements) await connection.query(statement);
+    const migrationDir = path.resolve(process.cwd(), 'server/migrations');
+    const migrationFiles = (await readdir(migrationDir)).filter((file) => file.endsWith('.sql')).sort();
+    for (const file of migrationFiles) {
+      const sql = await readFile(path.join(migrationDir, file), 'utf8');
+      const statements = sql.split(';').map((statement) => statement.trim()).filter(Boolean);
+      for (const statement of statements) {
+        try {
+          await connection.query(statement);
+        } catch (error) {
+          const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+          if (code === 'ER_DUP_FIELDNAME' || code === 'ER_TABLE_EXISTS_ERROR') continue;
+          throw error;
+        }
+      }
+    }
   } finally {
     connection.release();
   }

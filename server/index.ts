@@ -7,6 +7,7 @@ import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
+import { createInvoicePdf, type InvoiceTemplate } from './invoices';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -187,6 +188,77 @@ app.get('/api/catalog/products', asyncRoute(async (_request, response) => {
   response.json({ products: await readCatalogProducts(), source: 'database' });
 }));
 
+async function findOrder(orderNumber: string) {
+  const [[order]] = await getPool().query<any[]>(`SELECT * FROM shop_orders WHERE order_number = ? LIMIT 1`, [orderNumber]);
+  if (!order) return null;
+  const [items] = await getPool().query<any[]>(`SELECT i.*, p.image_card_url FROM shop_order_items i LEFT JOIN catalog_products p ON p.id = i.product_id WHERE i.order_id = ? ORDER BY i.id ASC`, [order.id]);
+  return { order, items };
+}
+
+function chooseInvoiceTemplate(value: unknown): InvoiceTemplate { return value === 'modern' ? 'modern' : 'classic'; }
+
+app.post('/api/orders', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const body = request.body ?? {};
+  const customer = body.customer ?? {};
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  if (!rawItems.length || !validEmail(customer.email) || !customer.firstName || !customer.lastName || !customer.phone || !customer.address || !customer.city || !customer.province) {
+    response.status(400).json({ error: 'invalid_order', message: 'Dados do cliente e produtos da encomenda são obrigatórios.' }); return;
+  }
+  const user = await getAuthenticatedUser(request);
+  const [settingRows] = await getPool().query<any[]>(`SELECT value_json FROM site_settings WHERE setting_key = 'exchange_rate' LIMIT 1`);
+  const rawSetting = settingRows[0]?.value_json;
+  const setting = typeof rawSetting === 'string' ? JSON.parse(rawSetting) : rawSetting;
+  const rate = Number(setting?.usdToAoa ?? body.rate ?? 913);
+  const connection = await getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const items: Array<{ id: string; name: string; unit: number; qty: number; subtotal: number }> = [];
+    for (const raw of rawItems) {
+      const productId = String(raw.productId ?? '');
+      const qty = Math.max(1, Math.min(99, Math.floor(Number(raw.qty) || 1)));
+      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`, [productId]);
+      if (!product) continue;
+      const unit = Number(product.sale_price_usd ?? product.base_price_usd);
+      items.push({ id: product.id, name: product.name, unit, qty, subtotal: unit * qty * rate });
+    }
+    if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', NULL, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, subtotal, subtotal, rate, customer.notes ?? null]);
+    const orderId = Number(insert.insertId);
+    const orderNumber = `GA${orderId}`;
+    await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);
+    for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, unit_price_aoa, quantity, subtotal_aoa) VALUES (?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.unit * rate, item.qty, item.subtotal]);
+    await connection.execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, NULL, 'awaiting_payment', 'Encomenda criada no checkout.', ?)`, [orderId, user?.id ?? null]);
+    await connection.commit();
+    response.status(201).json({ orderNumber, totalAoa: subtotal, invoiceTemplates: ['classic', 'modern'] });
+  } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
+}));
+
+app.get('/api/orders/:orderNumber', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const found = await findOrder(String(request.params.orderNumber));
+  if (!found || (request.query.email && String(request.query.email).toLowerCase() !== String(found.order.customer_email).toLowerCase())) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  response.json({ order: found.order, items: found.items });
+}));
+
+async function deliverInvoice(request: Request, response: Response, adminOnly: boolean): Promise<void> {
+  if (!requireDatabase(response)) return;
+  const admin = adminOnly ? await requireAdmin(request, response) : null;
+  if (adminOnly && !admin) return;
+  const found = await findOrder(String(request.params.orderNumber));
+  const emailMatches = String(request.query.email ?? '').toLowerCase() === String(found?.order.customer_email ?? '').toLowerCase();
+  if (!found || (!adminOnly && !emailMatches)) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  const template = chooseInvoiceTemplate(request.query.template);
+  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
+  await getPool().execute(`INSERT INTO invoice_downloads (order_id, template, downloaded_by_user_id) VALUES (?, ?, ?)`, [found.order.id, template, admin?.id ?? null]);
+  response.setHeader('Content-Type', 'application/pdf');
+  response.setHeader('Content-Disposition', `attachment; filename="fatura-${found.order.order_number}-${template}.pdf"`);
+  response.send(pdf);
+}
+
+app.get('/api/orders/:orderNumber/invoice', asyncRoute(async (request, response) => { await deliverInvoice(request, response, false); }));
+
 app.get('/api/settings/exchange-rate', asyncRoute(async (_request, response) => {
   if (!requireDatabase(response)) {
     response.json({ usdToAoa: 913, source: 'Configuração inicial GameAO', updatedAt: '2026-01-01', note: 'Valor inicial sujeito a configuração.' });
@@ -228,6 +300,16 @@ app.get('/api/admin/overview', asyncRoute(async (request, response) => {
     posts: { total: Number(posts?.total ?? 0), published: Number(posts?.published ?? 0) },
   });
 }));
+
+app.get('/api/admin/orders', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const user = await requireAdmin(request, response);
+  if (!user) return;
+  const [orders] = await getPool().query<any[]>(`SELECT o.*, COUNT(i.id) AS item_count FROM shop_orders o LEFT JOIN shop_order_items i ON i.order_id = o.id GROUP BY o.id ORDER BY o.created_at DESC LIMIT 200`);
+  response.json({ orders });
+}));
+
+app.get('/api/admin/orders/:orderNumber/invoice', asyncRoute(async (request, response) => { await deliverInvoice(request, response, true); }));
 
 app.get('/api/admin/products', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;

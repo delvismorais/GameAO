@@ -20,6 +20,7 @@ type AdminProduct = {
   isActive: boolean;
   image: string;
 };
+type AdminOrder = { order_number: string; customer_name: string; customer_email: string; total_aoa: number; status: string; payment_status: string; created_at: string; item_count: number };
 
 const EMPTY_FORM = {
   name: '',
@@ -36,6 +37,7 @@ export function Admin() {
   const { rate, config, updateConfig } = useSettings();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -45,20 +47,23 @@ export function Admin() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [overviewResponse, productsResponse] = await Promise.all([
+    const [overviewResponse, productsResponse, ordersResponse] = await Promise.all([
       fetch('/api/admin/overview', { credentials: 'include' }),
       fetch('/api/admin/products', { credentials: 'include' }),
+      fetch('/api/admin/orders', { credentials: 'include' }),
     ]);
-    if (overviewResponse.status === 403 || productsResponse.status === 403) {
+    if (overviewResponse.status === 403 || productsResponse.status === 403 || ordersResponse.status === 403) {
       setForbidden(true);
       setLoading(false);
       return;
     }
-    if (overviewResponse.ok && productsResponse.ok) {
+    if (overviewResponse.ok && productsResponse.ok && ordersResponse.ok) {
       const overviewData = await overviewResponse.json() as Overview;
       const productsData = await productsResponse.json() as { products: AdminProduct[] };
       setOverview(overviewData);
       setProducts(productsData.products);
+      const ordersData = await ordersResponse.json() as { orders: AdminOrder[] };
+      setOrders(ordersData.orders);
       setForbidden(false);
     }
     setLoading(false);
@@ -149,6 +154,21 @@ export function Admin() {
             <article><span>Clientes</span><strong>{overview?.customers.total ?? 0}</strong><small>registados</small></article>
             <article><span>Produtos</span><strong>{overview?.products.active ?? 0}</strong><small>de {overview?.products.total ?? 0} ativos</small></article>
             <article><span>Artigos</span><strong>{overview?.posts.published ?? 0}</strong><small>publicados</small></article>
+          </section>
+
+          <section className="admin-card admin-orders-card">
+            <div className="admin-card__head"><h2>Pedidos e faturas</h2><span>{orders.length} registos</span></div>
+            <div className="admin-products-table">
+              {orders.length === 0 && <p className="admin-message">Ainda não existem pedidos registados.</p>}
+              {orders.map((order) => (
+                <article key={order.order_number}>
+                  <div><strong>{order.order_number}</strong><small>{order.customer_name} · {order.customer_email}</small></div>
+                  <span>{new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2 }).format(Number(order.total_aoa))} Kz</span>
+                  <small>{order.status} · {order.payment_status}</small>
+                  <div className="admin-invoice-actions"><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=classic`} download>Clássica</a><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=modern`} download>Moderna</a></div>
+                </article>
+              ))}
+            </div>
           </section>
 
           <div className="admin-grid">

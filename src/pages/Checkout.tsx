@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { PageShell } from '../components/layout/PageShell';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Price } from '../components/ui/Price';
@@ -24,9 +24,10 @@ const EMPTY_CUSTOMER: Customer = {
 };
 
 export function Checkout() {
-  const { cartLines, cartSubtotalUsd, cartDiscountUsd, user } = useStore();
+  const { cartLines, cartSubtotalUsd, cartDiscountUsd, user, clearCart } = useStore();
   const { rate } = useSettings();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [customer, setCustomer] = useState<Customer>(() => ({
     ...EMPTY_CUSTOMER,
     firstName: user?.name.split(' ')[0] ?? '',
@@ -73,13 +74,24 @@ export function Checkout() {
     return Object.keys(next).length === 0;
   };
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!validate()) {
       showToast('Verifique os campos assinalados antes de confirmar a encomenda.', 'error');
       return;
     }
-    showToast('Não é possível confirmar a encomenda: ainda não existe um método de pagamento configurado.', 'error');
+    const response = await fetch('/api/orders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ rate, customer, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty })) }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      showToast(data?.message ?? 'Não foi possível registar a encomenda.', 'error');
+      return;
+    }
+    const data = await response.json() as { orderNumber: string };
+    clearCart();
+    navigate(`/checkout/confirmacao?order=${encodeURIComponent(data.orderNumber)}&email=${encodeURIComponent(customer.email)}`);
   };
 
   return (
@@ -90,9 +102,9 @@ export function Checkout() {
       <div className="checkout-demo-notice">
         <Icon name="clock" />
         <span>
-          <strong>Pagamento ainda não disponível:</strong> nenhum método de pagamento foi
-          configurado para esta loja. A encomenda não será criada até existir uma integração
-          validada.
+            <strong>Encomenda sem pagamento online:</strong> os dados serão registados e a confirmação
+            ficará disponível com o número único da encomenda. A integração de pagamento será adicionada
+            numa fase própria.
         </span>
       </div>
 
@@ -207,7 +219,7 @@ export function Checkout() {
 
           <div className="payment-box">
             <h3>Método de pagamento</h3>
-            <p className="payment-box__note">Nenhum método de pagamento está disponível neste momento.</p>
+            <p className="payment-box__note">Pagamento online ainda não configurado. A encomenda será criada como pendente.</p>
             <p className="payment-box__note">
               A taxa aplicada é {formatUsdAsAoa(rate, 1)} por 1 USD. O total final fica registado
               com esta taxa.
@@ -218,8 +230,8 @@ export function Checkout() {
             Os dados preenchidos só serão enviados quando existir um método de pagamento validado
             e uma política de tratamento configurada.
           </p>
-          <button type="submit" className="btn btn--primary btn--block btn--lg" disabled>
-            Pagamento indisponível
+          <button type="submit" className="btn btn--primary btn--block btn--lg">
+            Registar encomenda
           </button>
           <Link to="/cart" className="order-summary__back">← Voltar ao carrinho</Link>
         </aside>

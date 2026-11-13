@@ -22,6 +22,7 @@ import { Contact } from './pages/Contact';
 import { Faq } from './pages/Faq';
 import { Settings } from './pages/Settings';
 import { Admin } from './pages/Admin';
+import { OrderTracking } from './pages/OrderTracking';
 import { NotFound } from './pages/NotFound';
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
                 <Route path="/faqs" element={<Faq />} />
                 <Route path="/configuracoes" element={<Settings />} />
                 <Route path="/admin" element={<Admin />} />
+                <Route path="/acompanhar-pedido" element={<OrderTracking />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Layout>
