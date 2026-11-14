@@ -104,6 +104,16 @@ pnpm start
 
 O servidor respeita a variável `PORT` e usa `3000` como valor padrão. O endpoint `/_app/health` devolve o estado do serviço e da base de dados.
 
+## Publicação
+
+A produção corre num contentor Docker gerido pela Manus, com base de dados MySQL gerida na mesma plataforma:
+
+- `Dockerfile` — instala dependências, compila o frontend e o servidor, e arranca a aplicação com `pnpm start`.
+- MySQL gerido — a plataforma injeta `DATABASE_URL`; as migrações e o catálogo inicial são aplicados no arranque.
+- `/_app/health` — verificação de saúde usada pela plataforma antes de encaminhar tráfego.
+
+O repositório do projeto na Manus é a fonte usada para publicar. O repositório `delvismorais/GameAO` no GitHub mantém o mesmo histórico de código.
+
 ## Notas de operação
 
 A integração de pagamentos por cartão ou por fornecedor externo não é ativada sem fornecedor escolhido, credenciais protegidas e validação do fluxo. O sistema atual regista encomendas e mantém a arquitetura preparada para uma futura integração, sem armazenar dados de cartão.

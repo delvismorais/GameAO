@@ -7,3 +7,6 @@ shot.py
 shot2.py
 ref-notes.md
 NOTES.md
+.env
+.env.local
+dist-server/

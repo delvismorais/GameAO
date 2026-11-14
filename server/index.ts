@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { createServer as createViteServer, type ViteDevServer } from 'vite';
+import type { ViteDevServer } from 'vite';
 import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
@@ -427,6 +427,7 @@ async function serveApp(): Promise<void> {
   const isProduction = process.env.NODE_ENV === 'production';
   let vite: ViteDevServer | undefined;
   if (!isProduction) {
+    const { createServer: createViteServer } = await import('vite');
     vite = await createViteServer({ server: { middlewareMode: true, host: '0.0.0.0' }, appType: 'spa', root });
     app.use(vite.middlewares);
   } else {

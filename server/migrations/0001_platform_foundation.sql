@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS site_banners (
 
 CREATE TABLE IF NOT EXISTS shop_orders (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  order_number VARCHAR(40) NOT NULL,
+  order_number VARCHAR(64) NOT NULL,
   access_token_hash CHAR(64) NOT NULL,
   user_id BIGINT UNSIGNED NULL,
   customer_name VARCHAR(180) NOT NULL,
