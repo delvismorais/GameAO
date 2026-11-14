@@ -44,14 +44,9 @@ export function AdminMedia() {
     for (let index = 0; index < list.length; index += 1) {
       const original = list[index];
       const file = await compressImage(original);
-      const presign = await api<{ key: string; uploadUrl: string; publicUrl: string | null; visibility: string }>('/api/admin/media/presign', { method: 'POST', body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size, purpose: uploadPurpose, visibility: 'public' }) });
-      if (!presign.ok) { failed = true; setMessage(presign.error ?? 'Não foi possível autorizar o upload.'); setTone('error'); break; }
-      let put: Response;
-      try { put = await fetch(presign.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } }); }
-      catch { failed = true; setMessage('O envio para o R2 foi bloqueado pelo navegador. Verifique a política CORS do bucket.'); setTone('error'); break; }
-      if (!put.ok) { failed = true; setMessage(`O envio para o R2 falhou (HTTP ${put.status}). Verifique a configuração do bucket e CORS.`); setTone('error'); break; }
-      const confirm = await api('/api/admin/media/confirm', { method: 'POST', body: JSON.stringify({ key: presign.data.key, originalName: original.name, contentType: file.type, size: file.size, purpose: uploadPurpose, visibility: 'public' }) });
-      if (!confirm.ok) { failed = true; setMessage(confirm.error ?? 'Falha ao registar o ficheiro.'); setTone('error'); break; }
+      const body = new FormData(); body.append('file', file); body.append('kind', uploadPurpose);
+      const upload = await api<{ key: string; url: string }>('/api/admin/media', { method: 'POST', body });
+      if (!upload.ok) { failed = true; setMessage(upload.error ?? 'Falha no envio do ficheiro.'); setTone('error'); break; }
       setProgress(Math.round(((index + 1) / list.length) * 100));
     }
     setUploading(false);

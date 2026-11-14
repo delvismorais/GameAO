@@ -33,6 +33,7 @@ app.disable('x-powered-by');
 app.use('/api', express.json({ limit: '1mb' }));
 const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+const mediaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 
 const PROOF_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 const PROOF_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
@@ -654,19 +655,21 @@ app.get('/api/admin/products', asyncRoute(async (request, response) => {
   response.json({ products: await readCatalogProducts(true) });
 }));
 
-app.post('/api/admin/media', imageUpload.single('file'), asyncRoute(async (request, response) => {
+app.post('/api/admin/media', mediaUpload.single('file'), asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const admin = await requireAdmin(request, response);
   if (!admin) return;
   if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento R2 não está configurado.' }); return; }
   const file = request.file;
   const kind = String(request.body?.kind ?? 'product').replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'product';
-  if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype) || !hasValidImageSignature(file)) { response.status(400).json({ error: 'invalid_image', message: 'Envie uma imagem JPG, PNG ou WEBP válida.' }); return; }
-  const extension = file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : '.webp';
+  if (!file || !PROOF_MIME_TYPES.has(file.mimetype) || !hasValidFileSignature(file)) { response.status(400).json({ error: 'invalid_file', message: 'Envie um JPG, PNG, WEBP ou PDF válido.' }); return; }
+  const extension = safeFileExtension(file.originalname) || (file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : file.mimetype === 'image/webp' ? '.webp' : '.pdf');
   const key = `media/${kind}/${randomUUID()}${extension}`;
-  // Imagens do catálogo são públicas; não devem ser gravadas no bucket privado.
+  // Media pública é enviada pelo servidor para evitar falhas de CORS ou
+  // incompatibilidades de assinatura em browsers com URLs presignadas.
   await putObject(key, file.buffer, file.mimetype, false);
   const url = publicObjectUrl(key) ?? await getPrivateObjectUrl(key, 3600);
+  await getPool().execute(`INSERT INTO media_library (original_name, stored_name, bucket, object_key, public_url, mime_type, size_bytes, category, purpose, visibility, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', ?) ON CONFLICT (object_key) DO NOTHING`, [file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), key.split('/').pop(), process.env.R2_PUBLIC_BUCKET ?? process.env.R2_BUCKET ?? 'gameao-media', key, publicObjectUrl(key), file.mimetype, file.size, file.mimetype.startsWith('image/') ? 'image' : 'document', kind, admin.id]);
   await recordAudit(admin.id, 'media.upload', 'media', key, { kind, mimeType: file.mimetype, size: file.size });
   response.status(201).json({ key, url, public: Boolean(publicObjectUrl(key)) });
 }));
