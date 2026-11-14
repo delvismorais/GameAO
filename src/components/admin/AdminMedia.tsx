@@ -62,7 +62,7 @@ export function AdminMedia() {
   const copy = async (value: string) => { await navigator.clipboard.writeText(value).catch(() => undefined); setMessage('Referência copiada.'); setTone('success'); };
   const open = async (media: Media) => { if (media.public_url) { window.open(media.public_url, '_blank', 'noopener,noreferrer'); return; } const result = await api<{ url: string }>(`/api/admin/media/${media.id}/download`); if (result.ok) window.open(result.data.url, '_blank', 'noopener,noreferrer'); else { setMessage(result.error ?? 'Ficheiro indisponível.'); setTone('error'); } };
 
-  return <AdminSection title="Biblioteca de multimédia" subtitle="Todos os ficheiros ficam registados com metadados. O upload é direto para o Cloudflare R2 através de URLs assinadas." actions={<button type="button" className="btn btn--outline btn--sm" onClick={() => void reload()}>Atualizar</button>}>
+  return <AdminSection title="Biblioteca de multimédia" subtitle="Todos os ficheiros ficam registados com metadados. O servidor valida e envia os ficheiros para o Cloudflare R2 com segurança." actions={<button type="button" className="btn btn--outline btn--sm" onClick={() => void reload()}>Atualizar</button>}>
     <Notice message={message} tone={tone} />
     {data && !data.storageConfigured && <Notice tone="warning" message="O armazenamento R2 não está configurado neste ambiente. Configure R2_BUCKET, R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_PUBLIC_BASE_URL no Render." />}
     <div className="admin-uploader" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void upload(event.dataTransfer.files); }}>
