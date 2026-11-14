@@ -32,7 +32,7 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
     <header className={`site-header ${scrolled ? 'is-scrolled' : ''}`.trim()}>
       <div className="container site-header__inner">
         <Link to="/" className="site-logo" aria-label="GameAO — página inicial">
-          <img src="/assets/logo.png" alt="GameAO" width={240} height={40} />
+          <img src="/assets/gameao-logo.png" alt="GameAO" width={150} height={58} />
         </Link>
 
         <nav className="primary-nav" aria-label="Navegação principal">
@@ -64,6 +64,7 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
             <li><NavLink to="/product-category/xbox">Xbox</NavLink></li>
             <li><NavLink to="/product-category/playstation">PlayStation</NavLink></li>
             <li><NavLink to="/product-category/pc">PC</NavLink></li>
+            <li><NavLink to="/pedido">Acompanhar pedido</NavLink></li>
           </ul>
         </nav>
 

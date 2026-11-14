@@ -98,7 +98,7 @@ interface StoreContextValue {
 
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (name: string, email: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, password: string, phone?: string) => Promise<boolean>;
   logout: () => Promise<void>;
   updateProfile: (patch: Partial<User>) => Promise<boolean>;
 
@@ -176,6 +176,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    fetch('/api/account/orders', { credentials: 'include' })
+      .then((response) => response.ok ? response.json() : { orders: [] })
+      .then((data: { orders?: Order[] }) => { if (active && Array.isArray(data.orders)) setOrders(data.orders); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [user]);
+
   const addToCart = useCallback((productId: string, qty = 1) => {
     setCart((current) => {
       const existing = current.find((line) => line.productId === productId);
@@ -251,13 +261,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
-  const register = useCallback(async (name: string, email: string, password: string) => {
+  const register = useCallback(async (name: string, email: string, password: string, phone = '') => {
     if (!name.trim() || !email.trim() || password.trim().length < 6) return false;
     const response = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, phone }),
     });
     if (!response.ok) return false;
     const data = await response.json() as { user: User };

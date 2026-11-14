@@ -51,6 +51,7 @@ export default function App() {
                 <Route path="/faqs" element={<Faq />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/acompanhar-pedido" element={<OrderTracking />} />
+                <Route path="/pedido" element={<OrderTracking />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Layout>

@@ -1,8 +1,9 @@
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const bucket = process.env.R2_BUCKET;
-const endpoint = process.env.R2_ENDPOINT;
+const bucket = process.env.R2_BUCKET?.trim();
+const endpoint = process.env.R2_ENDPOINT?.trim()
+  ?? (process.env.R2_ACCOUNT_ID?.trim() ? `https://${process.env.R2_ACCOUNT_ID.trim()}.r2.cloudflarestorage.com` : undefined);
 const client = endpoint && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY
   ? new S3Client({
       region: 'auto',

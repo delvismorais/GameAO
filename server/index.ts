@@ -234,6 +234,19 @@ app.put('/api/account/profile', asyncRoute(async (request, response) => {
   }
 }));
 
+app.get('/api/account/orders', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const user = await getAuthenticatedUser(request);
+  if (!user) { response.status(401).json({ error: 'unauthorized', message: 'Inicie sessão para consultar as compras.' }); return; }
+  const [orders] = await getPool().query<any[]>(`SELECT id, order_number, created_at, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status FROM shop_orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`, [user.id]);
+  const result = [];
+  for (const order of orders) {
+    const [items] = await getPool().query<any[]>(`SELECT product_id, product_name, image_url, quantity, unit_price_aoa, subtotal_aoa FROM shop_order_items WHERE order_id = ? ORDER BY id ASC LIMIT 100`, [order.id]);
+    result.push({ id: order.order_number, createdAt: order.created_at, subtotalAoa: Number(order.subtotal_aoa), discountAoa: Number(order.discount_aoa), totalAoa: Number(order.total_aoa), exchangeRate: Number(order.exchange_rate_usd_aoa), status: order.status, items: items.map((item: any) => ({ productId: item.product_id, name: item.product_name, image: item.image_url ?? '/assets/gameao-logo.png', qty: Number(item.quantity), unitPriceAoa: Number(item.unit_price_aoa), lineTotalAoa: Number(item.subtotal_aoa) })) });
+  }
+  response.json({ orders: result });
+}));
+
 app.get('/api/catalog/status', asyncRoute(async (_request, response) => {
   if (!requireDatabase(response)) return;
   const [products] = await getPool().query(`SELECT COUNT(*) AS count FROM catalog_products WHERE is_active = 1`);
@@ -284,7 +297,8 @@ async function findOrder(orderNumber: string) {
   const [items] = await getPool().query<any[]>(`SELECT i.*, p.image_card_url FROM shop_order_items i LEFT JOIN catalog_products p ON p.id = i.product_id WHERE i.order_id = ? ORDER BY i.id ASC`, [order.id]);
   const [[paymentMethod]] = await getPool().query<any[]>(`SELECT id, code, name, description, instructions, receiving_data_json, requires_proof, payment_deadline_hours, customer_message FROM payment_methods WHERE id = ? LIMIT 1`, [order.payment_method_id]);
   const [proofs] = await getPool().query<any[]>(`SELECT id, original_name, mime_type, size_bytes, status, admin_note, submitted_at, reviewed_at FROM payment_proofs WHERE order_id = ? ORDER BY submitted_at DESC`, [order.id]);
-  return { order, items, paymentMethod: paymentMethod ? { ...paymentMethod, receiving_data: typeof paymentMethod.receiving_data_json === 'string' ? JSON.parse(paymentMethod.receiving_data_json) : paymentMethod.receiving_data_json } : null, proofs };
+  const [history] = await getPool().query<any[]>(`SELECT from_status, to_status, note, created_at FROM shop_order_status_history WHERE order_id = ? ORDER BY created_at ASC LIMIT 100`, [order.id]);
+  return { order, items, paymentMethod: paymentMethod ? { ...paymentMethod, receiving_data: typeof paymentMethod.receiving_data_json === 'string' ? JSON.parse(paymentMethod.receiving_data_json) : paymentMethod.receiving_data_json } : null, proofs, history };
 }
 
 function chooseInvoiceTemplate(value: unknown): InvoiceTemplate { return value === 'modern' ? 'modern' : 'classic'; }
@@ -319,10 +333,9 @@ app.put('/api/admin/payment-methods/:id', asyncRoute(async (request, response) =
 app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento seguro de comprovativos ainda não está configurado.' }); return; }
-  const email = String(request.body?.email ?? '').trim().toLowerCase();
   const file = request.file;
   const found = await findOrder(String(request.params.orderNumber).trim().toUpperCase());
-  if (!found || !validEmail(email) || email !== String(found.order.customer_email).toLowerCase()) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
   if (!file) { response.status(400).json({ error: 'file_required', message: 'Selecione um comprovativo.' }); return; }
   const requestedPaymentCode = String(request.body?.paymentMethod ?? '').trim();
   let paymentMethodId = found.order.payment_method_id ?? null;
@@ -341,6 +354,8 @@ app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRou
   await putPrivateObject(key, file.buffer, file.mimetype);
   await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?, 'submitted')`, [found.order.id, paymentMethodId, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size]);
   await getPool().execute(`UPDATE shop_orders SET payment_method = ?, payment_method_id = ?, payment_status = 'paid', status = 'payment_confirmed' WHERE id = ?`, [paymentMethodCode, paymentMethodId, found.order.id]);
+  await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, 'payment_confirmed', 'Comprovativo enviado pelo cliente.', NULL)`, [found.order.id, found.order.status]);
+  await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, 'payment_confirmed');
   response.status(201).json({ ok: true, status: 'paid', message: 'Comprovativo recebido. O pedido foi marcado como pago e ficará disponível para processamento.' });
 }));
 
@@ -452,8 +467,8 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
 app.get('/api/orders/:orderNumber', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const found = await findOrder(String(request.params.orderNumber));
-  if (!found || (request.query.email && String(request.query.email).toLowerCase() !== String(found.order.customer_email).toLowerCase())) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
-  response.json({ order: found.order, items: found.items });
+  if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
+  response.json({ order: { order_number: found.order.order_number, customer_name: found.order.customer_name, total_aoa: found.order.total_aoa, subtotal_aoa: found.order.subtotal_aoa, shipping_aoa: found.order.shipping_aoa, status: found.order.status, payment_status: found.order.payment_status, payment_method: found.order.payment_method, created_at: found.order.created_at, updated_at: found.order.updated_at, delivery_city: found.order.billing_city, delivery_province: found.order.billing_province }, items: found.items.map((item: any) => ({ product_name: item.product_name, quantity: item.quantity, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url })), history: found.history });
 }));
 
 async function deliverInvoice(request: Request, response: Response, adminOnly: boolean): Promise<void> {
@@ -461,8 +476,7 @@ async function deliverInvoice(request: Request, response: Response, adminOnly: b
   const admin = adminOnly ? await requireAdmin(request, response) : null;
   if (adminOnly && !admin) return;
   const found = await findOrder(String(request.params.orderNumber));
-  const emailMatches = String(request.query.email ?? '').toLowerCase() === String(found?.order.customer_email ?? '').toLowerCase();
-  if (!found || (!adminOnly && !emailMatches)) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
   const template = chooseInvoiceTemplate(request.query.template);
   const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
   await getPool().execute(`INSERT INTO invoice_downloads (order_id, template, downloaded_by_user_id) VALUES (?, ?, ?)`, [found.order.id, template, admin?.id ?? null]);

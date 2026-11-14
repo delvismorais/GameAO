@@ -30,7 +30,7 @@ export function OrderConfirmation() {
 
   const loadOrder = async () => {
     if (!orderId || localOrder) return;
-    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}?email=${encodeURIComponent(email)}`);
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
     setServerOrder(response.ok ? await response.json() as ServerOrder : null);
   };
   useEffect(() => {
@@ -49,7 +49,7 @@ export function OrderConfirmation() {
     event.preventDefault();
     if (!proofFile || !number) return;
     setProofUploading(true); setProofMessage('');
-    const body = new FormData(); body.append('email', email); body.append('file', proofFile); if (selectedPaymentMethod) body.append('paymentMethod', selectedPaymentMethod);
+    const body = new FormData(); body.append('file', proofFile); if (selectedPaymentMethod) body.append('paymentMethod', selectedPaymentMethod);
     try {
       const response = await fetch(`/api/orders/${encodeURIComponent(number)}/proofs`, { method: 'POST', body });
       const data = await response.json().catch(() => null) as { message?: string } | null;
@@ -59,8 +59,8 @@ export function OrderConfirmation() {
     finally { setProofUploading(false); }
   };
 
-  if (loading) return <PageShell crumbs={[{ label: 'Confirmação' }]}><p className="admin-state">A carregar a encomenda…</p></PageShell>;
-  if (!localOrder && !serverOrder) return <PageShell crumbs={[{ label: 'Confirmação' }]}><EmptyState title="Encomenda não encontrada" icon="🧾" action={<Link to="/shop" className="btn btn--primary">Voltar à loja</Link>}>Confirme o número e o email usados no checkout.</EmptyState></PageShell>;
+  if (loading) return <PageShell crumbs={[{ label: 'Confirmação' }]}><p className="admin-state">A carregar o pedido…</p></PageShell>;
+  if (!localOrder && !serverOrder) return <PageShell crumbs={[{ label: 'Confirmação' }]}><EmptyState title="Pedido não encontrado" icon="🧾" action={<Link to="/shop" className="btn btn--primary">Voltar à loja</Link>}>Confirme o número do pedido informado.</EmptyState></PageShell>;
 
   const createdAt = server?.created_at ?? localOrder?.createdAt ?? new Date().toISOString();
   const rate = Number(server?.exchange_rate_usd_aoa ?? localOrder?.exchangeRate ?? 913);
@@ -68,17 +68,17 @@ export function OrderConfirmation() {
   const items = serverOrder?.items;
   const paid = server?.payment_status === 'paid';
 
-  return <PageShell crumbs={[{ label: 'Confirmação da encomenda' }]}>
+  return <PageShell crumbs={[{ label: 'Confirmação do pedido' }]}>
     <div className="order-confirmation">
       <div className="order-confirmation__icon"><Icon name="check" /></div>
       <h1>{paid ? 'Pagamento recebido' : 'Encomenda registada'}</h1>
       <p className="order-confirmation__lead">A sua encomenda foi registada com o número único <strong>{number}</strong>. Guarde-o para acompanhamento e descarga da fatura.</p>
       <div className="order-confirmation__summary"><div><span>Número da encomenda</span><strong>{number}</strong></div><div><span>Data</span><strong>{formatDatePt(createdAt)}</strong></div><div><span>Estado</span><strong>{server?.status ?? localOrder?.status ?? 'Pendente'}</strong></div><div><span>Total</span><strong>{formatUsdAsAoa(total / rate, rate)}</strong></div><div><span>Taxa aplicada</span><strong>1 USD = {formatUsdAsAoa(1, rate)}</strong></div><div><span>Pagamento</span><strong>{paid ? 'Pago' : 'Pendente'}</strong></div></div>
-      {items && <><h2 className="order-confirmation__heading">Artigos</h2><ul className="order-confirmation__items">{items.map((item) => <li key={item.product_name}><img src={item.image_card_url ?? '/assets/logo.png'} alt="" /><span>{item.product_name} × {item.quantity}</span><strong>{formatUsdAsAoa(Number(item.subtotal_aoa) / rate, rate)}</strong></li>)}</ul></>}
+      {items && <><h2 className="order-confirmation__heading">Artigos</h2><ul className="order-confirmation__items">{items.map((item) => <li key={item.product_name}><img src={item.image_card_url ?? '/assets/gameao-logo.png'} alt="" /><span>{item.product_name} × {item.quantity}</span><strong>{formatUsdAsAoa(Number(item.subtotal_aoa) / rate, rate)}</strong></li>)}</ul></>}
 
       {!paid && <section className="payment-box order-confirmation__payment"><h2 className="order-confirmation__heading">Pagamento e comprovativo</h2><p>Se já efetuou o pagamento, escolha o método, consulte os dados de recebimento e envie o comprovativo. O pedido será marcado como pago automaticamente.</p>{paymentMethods.length > 0 ? <label className="field"><span>Método utilizado</span><select value={serverOrder?.paymentMethod?.code ?? selectedPaymentMethod} onChange={(event) => setSelectedPaymentMethod(event.target.value)}><option value="">Escolher método de pagamento</option>{paymentMethods.map((method) => <option key={method.code} value={method.code}>{method.name}</option>)}</select></label> : <p className="admin-message">Ainda não existem métodos de pagamento ativos. A equipa GameAO precisa configurá-los no painel.</p>}{selectedMethod && <div className="payment-instructions"><h3>{selectedMethod.name}</h3><p>{selectedMethod.customer_message}</p><p>{selectedMethod.instructions}</p><ReceivingData data={selectedMethod.receiving_data} /></div>}{canUpload && <form className="admin-form" onSubmit={submitProof}><label className="field"><span>Comprovativo (JPG, PNG, WEBP ou PDF; máximo 10 MB)</span><input required type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} /></label><button className="btn btn--primary" type="submit" disabled={proofUploading}>{proofUploading ? 'A enviar…' : 'Enviar comprovativo e marcar como pago'}</button>{proofMessage && <p className="admin-message">{proofMessage}</p>}</form>}</section>}
       {paid && <section className="payment-box order-confirmation__payment"><h2 className="order-confirmation__heading">Pagamento confirmado</h2><p>O comprovativo foi recebido e o pedido está marcado como pago. A equipa GameAO dará seguimento ao processamento.</p>{serverOrder?.proofs?.length ? <p className="admin-message">Comprovativo: {serverOrder.proofs[0].original_name} · {serverOrder.proofs[0].status}</p> : null}</section>}
-      <div className="order-confirmation__actions"><a href={`/api/orders/${encodeURIComponent(number)}/invoice?email=${encodeURIComponent(email)}&template=classic`} className="btn btn--primary" download>Baixar fatura · Modelo clássico</a><a href={`/api/orders/${encodeURIComponent(number)}/invoice?email=${encodeURIComponent(email)}&template=modern`} className="btn btn--outline" download>Baixar fatura · Modelo moderno</a><Link to="/my-account/orders" className="btn btn--outline">Ver encomendas</Link><Link to="/shop" className="btn btn--outline">Continuar a comprar</Link></div>
+      <div className="order-confirmation__actions"><Link to={`/pedido?order=${encodeURIComponent(number)}`} className="btn btn--primary">Acompanhar pedido</Link><a href={`/api/orders/${encodeURIComponent(number)}/invoice?template=classic`} className="btn btn--outline" download>Baixar fatura · Modelo clássico</a><a href={`/api/orders/${encodeURIComponent(number)}/invoice?template=modern`} className="btn btn--outline" download>Baixar fatura · Modelo moderno</a><Link to="/my-account/orders" className="btn btn--outline">Ver compras</Link><Link to="/shop" className="btn btn--outline">Continuar a comprar</Link></div>
     </div>
   </PageShell>;
 }

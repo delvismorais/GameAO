@@ -14,7 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function message(orderNumber: string, customerName: string, status: string): string {
-  return `Olá ${customerName}, a sua encomenda ${orderNumber} foi atualizada para: ${STATUS_LABELS[status] ?? status}. Consulte o acompanhamento em GameAO e use o seu número de encomenda para ver os detalhes.`;
+  return `Olá ${customerName}, o seu pedido ${orderNumber} foi atualizado para: ${STATUS_LABELS[status] ?? status}. Consulte o acompanhamento em GameAO e use o número do pedido para ver os detalhes.`;
 }
 
 async function logNotification(orderId: number, channel: string, recipient: string, eventType: string, status: string, payload: unknown, errorMessage?: string, providerMessageId?: string) {
@@ -29,7 +29,7 @@ async function sendEmail(orderId: number, email: string, orderNumber: string, cu
   }
   try {
     const transporter = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT ?? 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } });
-    const info = await transporter.sendMail({ from: process.env.SMTP_FROM, to: email, subject: `Atualização da encomenda ${orderNumber} · GameAO`, text: message(orderNumber, customerName, status), html: `<p>${message(orderNumber, customerName, status)}</p>` });
+    const info = await transporter.sendMail({ from: process.env.SMTP_FROM, to: email, subject: `Atualização do pedido ${orderNumber} · GameAO`, text: message(orderNumber, customerName, status), html: `<p>${message(orderNumber, customerName, status)}</p>` });
     await logNotification(orderId, 'email', email, 'order_status_changed', 'sent', payload, undefined, info.messageId);
     return 'sent';
   } catch (error) {

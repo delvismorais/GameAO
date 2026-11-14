@@ -27,8 +27,9 @@
 }
 
 .site-logo img {
-  width: 230px;
-  height: auto;
+  width: 180px;
+  height: 42px;
+  object-fit: contain;
 }
 
 .primary-nav {
@@ -675,6 +676,9 @@
 }
 
 .footer-logo img {
+  width: 170px;
+  height: 58px;
+  object-fit: contain;
   width: 220px;
   margin-bottom: 20px;
 }

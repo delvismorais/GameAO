@@ -22,6 +22,7 @@
     { "path": "/contact-us", "title": "Contacte-nos" },
     { "path": "/faqs", "title": "Perguntas Frequentes" },
     { "path": "/admin", "title": "Administração" },
-    { "path": "/acompanhar-pedido", "title": "Acompanhar pedido" }
+    { "path": "/acompanhar-pedido", "title": "Acompanhar pedido" },
+    { "path": "/pedido", "title": "Acompanhar pedido" }
   ]
 }

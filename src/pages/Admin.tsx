@@ -127,7 +127,7 @@ export function Admin() {
     <div className="admin-head"><div><p className="page-kicker">GameAO · operação</p><h1 className="page-title">Painel administrativo</h1><p className="page-subtitle">Gestão centralizada do catálogo, pedidos, preços e operação da loja.</p></div><Link to="/my-account" className="btn btn--outline btn--sm">Minha conta</Link></div>
     <div className="admin-shell">
       <nav className="admin-nav" aria-label="Menu administrativo">
-        <div className="admin-nav__identity"><img src="/assets/logo.png" alt="GameAO" /><span>Painel Admin<br />Operação da loja</span></div>
+        <div className="admin-nav__identity"><img src="/assets/gameao-logo.png" alt="GameAO" /><span>Painel Admin<br />Operação da loja</span></div>
         <label className="admin-nav__search"><span className="sr-only">Pesquisar menu</span><input value={menuSearch} onChange={(event) => setMenuSearch(event.target.value)} placeholder="Pesquisar menu…" /></label>
         {visibleNavGroups.map((group) => <section className="admin-nav__group" key={group.label}><h2>{group.label}</h2>{group.items.map((item) => <button type="button" key={item.id} className={activeTab === item.id ? 'is-active' : ''} onClick={() => { setActiveTab(item.id); setMessage(''); }}><Icon name={item.icon} /><span>{item.label}</span></button>)}</section>)}
         {visibleNavGroups.length === 0 && <p className="admin-nav__empty">Nenhuma secção encontrada.</p>}

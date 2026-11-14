@@ -15,7 +15,7 @@ export function Footer() {
       <div className="container site-footer__grid">
         <div className="footer-col footer-col--about">
           <Link to="/" className="footer-logo">
-            <img src="/assets/logo.png" alt="GameAO" />
+            <img src="/assets/gameao-logo.png" alt="GameAO" />
           </Link>
           <p>
             {STORE_INFO.tagline} com preços em kwanzas e conteúdos em português de Angola.
@@ -87,7 +87,7 @@ export function Footer() {
             <li><Link to="/about-us">Sobre Nós</Link></li>
             <li><Link to="/contact-us">Contacte-nos</Link></li>
             <li><Link to="/faqs">Perguntas Frequentes</Link></li>
-            <li><Link to="/acompanhar-pedido">Acompanhar pedido</Link></li>
+            <li><Link to="/pedido">Acompanhar pedido</Link></li>
           </ul>
         </div>
       </div>

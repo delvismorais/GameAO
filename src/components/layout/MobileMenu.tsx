@@ -26,7 +26,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
       <div className="mobile-menu__overlay" onClick={onClose} />
       <aside className="mobile-menu__panel" role="dialog" aria-modal="true" aria-label="Menu de navegação">
         <div className="mobile-menu__head">
-          <img src="/assets/logo.png" alt="GameAO" />
+          <img src="/assets/gameao-logo.png" alt="GameAO" />
           <button type="button" className="mobile-menu__close" onClick={onClose} aria-label="Fechar menu">
             <Icon name="close" />
           </button>
@@ -48,6 +48,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
           <Link to="/my-account" onClick={onClose}>Minha Conta</Link>
           <Link to="/wishlist" onClick={onClose}>Lista de Desejos</Link>
           <Link to="/compare" onClick={onClose}>Comparar Produtos</Link>
+          <Link to="/pedido" onClick={onClose}>Acompanhar pedido</Link>
         </nav>
         <div className="mobile-menu__foot">
           <p>{CONTACT_INFO.email}</p>

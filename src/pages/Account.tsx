@@ -14,7 +14,7 @@ export function Account() {
   const { showToast } = useToast();
   const [mode, setMode] = useState<Mode>('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
   const [lostEmail, setLostEmail] = useState('');
   const [profile, setProfile] = useState({ name: user?.name ?? '', email: user?.email ?? '', phone: user?.phone ?? '' });
   const [lostSent, setLostSent] = useState(false);
@@ -46,17 +46,17 @@ export function Account() {
 
   const submitRegister = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!registerForm.name.trim() || !emailValid(registerForm.email) || registerForm.password.trim().length < 6) {
-      showToast('Preencha o nome, um email válido e uma palavra-passe com pelo menos 6 caracteres.', 'error');
+    if (!registerForm.name.trim() || !emailValid(registerForm.email) || !registerForm.phone.trim() || registerForm.password.trim().length < 6) {
+      showToast('Preencha o nome, email, número de telemóvel e uma palavra-passe com pelo menos 6 caracteres.', 'error');
       return;
     }
     if (registerForm.password !== registerForm.confirm) {
       showToast('As palavras-passe não coincidem.', 'error');
       return;
     }
-    if (await register(registerForm.name, registerForm.email, registerForm.password)) {
+    if (await register(registerForm.name, registerForm.email, registerForm.password, registerForm.phone)) {
       showToast('Conta criada com sucesso.');
-      setProfile({ name: registerForm.name, email: registerForm.email, phone: '' });
+      setProfile({ name: registerForm.name, email: registerForm.email, phone: registerForm.phone });
     } else {
       showToast('Não foi possível criar a conta. O email pode já estar registado.', 'error');
     }
@@ -100,7 +100,7 @@ export function Account() {
           <aside className="account-nav">
             <p className="account-nav__greeting">Olá, <strong>{user.name}</strong></p>
             <Link to="/my-account" className="is-active"><Icon name="user" /> Dados da conta</Link>
-            <Link to="/my-account/orders"><Icon name="cart" /> Encomendas <span>{orders.length}</span></Link>
+            <Link to="/my-account/orders"><Icon name="cart" /> Compras <span>{orders.length}</span></Link>
             <Link to="/wishlist"><Icon name="heart" /> Lista de desejos</Link>
             <Link to="/compare"><Icon name="compare" /> Comparar produtos</Link>
             {(user.role === 'admin' || user.role === 'super_admin') && <Link to="/admin"><Icon name="category" /> Painel administrativo</Link>}
@@ -115,7 +115,7 @@ export function Account() {
               <Link to="/shop" className="btn btn--primary">Explorar a loja</Link>
             </section>
             <section className="account-summary" aria-label="Resumo da conta">
-              <Link to="/my-account/orders"><span>Encomendas</span><strong>{orders.length}</strong><small>Ver histórico</small></Link>
+              <Link to="/my-account/orders"><span>Compras</span><strong>{orders.length}</strong><small>Ver histórico</small></Link>
               <Link to="/wishlist"><span>Lista de desejos</span><strong>{wishlist.length}</strong><small>Produtos guardados</small></Link>
               <Link to="/compare"><span>Comparação</span><strong>{compare.length}</strong><small>Produtos selecionados</small></Link>
               <Link to="/cart"><span>Carrinho</span><strong>{cartCount}</strong><small>Artigos atuais</small></Link>
@@ -140,9 +140,9 @@ export function Account() {
             </section>
 
             <section className="account-section">
-              <h2>Encomendas recentes</h2>
+              <h2>Compras recentes</h2>
               {orders.length === 0 ? (
-                <p className="account-empty">Ainda não fez nenhuma encomenda. <Link to="/shop">Explorar a loja</Link></p>
+                <p className="account-empty">Ainda não fez nenhuma compra. <Link to="/shop">Explorar a loja</Link></p>
               ) : (
                 <ul className="account-orders-mini">
                   {orders.slice(0, 3).map((order) => (
@@ -150,12 +150,12 @@ export function Account() {
                       <span>{order.id}</span>
                       <span>{formatDatePt(order.createdAt)}</span>
                       <strong>{formatUsdAsAoa(order.totalAoa / order.exchangeRate, order.exchangeRate)}</strong>
-                      <Link to={`/checkout/confirmacao?order=${encodeURIComponent(order.id)}`}>Ver</Link>
+                      <Link to={`/pedido?order=${encodeURIComponent(order.id)}`}>Ver</Link>
                     </li>
                   ))}
                 </ul>
               )}
-              <Link to="/my-account/orders" className="btn btn--outline btn--sm">Ver todas as encomendas</Link>
+              <Link to="/my-account/orders" className="btn btn--outline btn--sm">Ver todas as compras</Link>
             </section>
           </div>
         </div>
@@ -193,7 +193,7 @@ export function Account() {
           {mode === 'register' && (
             <form className="auth-form" onSubmit={submitRegister} noValidate>
               <h2>Criar uma conta</h2>
-              <p>Registe-se para guardar favoritos, comparações e o histórico de encomendas.</p>
+              <p>Registe-se para guardar favoritos, comparações e o histórico de compras.</p>
               <label className="field">
                 <span>Nome completo *</span>
                 <input value={registerForm.name} onChange={(event) => setRegisterForm((current) => ({ ...current, name: event.target.value }))} autoComplete="name" />
@@ -201,6 +201,10 @@ export function Account() {
               <label className="field">
                 <span>Email *</span>
                 <input type="email" value={registerForm.email} onChange={(event) => setRegisterForm((current) => ({ ...current, email: event.target.value }))} autoComplete="email" />
+              </label>
+              <label className="field">
+                <span>Número de telemóvel *</span>
+                <input type="tel" value={registerForm.phone} onChange={(event) => setRegisterForm((current) => ({ ...current, phone: event.target.value }))} autoComplete="tel" placeholder="+244 9XX XXX XXX" />
               </label>
               <label className="field">
                 <span>Palavra-passe *</span>

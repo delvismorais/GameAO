@@ -9,10 +9,10 @@ export function AccountOrders() {
 
   if (!user) {
     return (
-      <PageShell crumbs={[{ label: 'Minha Conta', href: '/my-account' }, { label: 'Encomendas' }]}>
-        <h1 className="page-title">Encomendas</h1>
+      <PageShell crumbs={[{ label: 'Minha Conta', href: '/my-account' }, { label: 'Compras' }]}>
+        <h1 className="page-title">Compras</h1>
         <EmptyState
-          title="Inicie sessão para ver as encomendas"
+          title="Inicie sessão para ver as compras"
           icon="🔒"
           action={<Link to="/my-account" className="btn btn--primary">Entrar na conta</Link>}
         >
@@ -23,19 +23,19 @@ export function AccountOrders() {
   }
 
   return (
-    <PageShell crumbs={[{ label: 'Minha Conta', href: '/my-account' }, { label: 'Encomendas' }]}>
+    <PageShell crumbs={[{ label: 'Minha Conta', href: '/my-account' }, { label: 'Compras' }]}>
       <div className="orders-head">
-        <h1 className="page-title">Encomendas</h1>
+        <h1 className="page-title">Compras</h1>
         <Link to="/my-account" className="btn btn--outline btn--sm">← Voltar à conta</Link>
       </div>
 
       {orders.length === 0 ? (
         <EmptyState
-          title="Ainda não há encomendas"
+          title="Ainda não há compras"
           icon="🧾"
           action={<Link to="/shop" className="btn btn--primary">Explorar a Loja</Link>}
         >
-          Quando confirmar uma encomenda, ela aparecerá aqui com o respetivo estado.
+          Quando confirmar uma compra, ela aparecerá aqui com o respetivo estado.
         </EmptyState>
       ) : (
         <div className="orders-list">
@@ -43,7 +43,7 @@ export function AccountOrders() {
             <article key={order.id} className="order-card">
               <header className="order-card__head">
                 <div>
-                  <strong>Encomenda {order.id}</strong>
+                  <strong>Pedido {order.id}</strong>
                   <span>{formatDatePt(order.createdAt)}</span>
                 </div>
                 <span className={`order-status order-status--${order.status === 'Pendente' ? 'pending' : 'done'}`}>
@@ -61,7 +61,7 @@ export function AccountOrders() {
               <footer className="order-card__foot">
                 <span>Total: <strong>{formatUsdAsAoa(order.totalAoa / order.exchangeRate, order.exchangeRate)}</strong></span>
                 <span>Taxa: 1 USD = {formatUsdAsAoa(1, order.exchangeRate)}</span>
-                <Link to={`/checkout/confirmacao?order=${encodeURIComponent(order.id)}`} className="btn btn--outline btn--sm">Ver detalhes</Link>
+                <Link to={`/pedido?order=${encodeURIComponent(order.id)}`} className="btn btn--outline btn--sm">Ver detalhes</Link>
               </footer>
             </article>
           ))}

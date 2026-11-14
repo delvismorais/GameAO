@@ -54,18 +54,19 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
   document.on('data', (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve, reject) => { document.on('end', () => resolve(Buffer.concat(chunks))); document.on('error', reject); });
   const width = document.page.width - document.page.margins.left - document.page.margins.right;
+  const logo = path.join(root, 'public', 'assets', 'gameao-logo.png');
 
   if (template === 'modern') {
     document.rect(0, 0, document.page.width, 112).fill(navy);
-    document.fillColor('#ffffff').fontSize(27).font('Helvetica-Bold').text('Game', 42, 38, { continued: true });
-    document.fillColor(orange).text('AO');
+    if (fs.existsSync(logo)) document.image(logo, 42, 20, { fit: [145, 70], valign: 'center' });
+    else document.fillColor('#ffffff').fontSize(27).font('Helvetica-Bold').text('GameAO', 42, 38);
     document.fillColor('#ffffff').fontSize(9).font('Helvetica').text('LOJA DE VIDEOJOGOS · ANGOLA', 42, 76);
     document.fillColor('#ffffff').fontSize(20).font('Helvetica-Bold').text('FATURA', 390, 38, { align: 'right', width: 160 });
     document.fontSize(9).font('Helvetica').text(order.orderNumber, 390, 68, { align: 'right', width: 160 });
     document.fillColor(navy);
   } else {
-    document.fillColor(orange).fontSize(28).font('Helvetica-Bold').text('Game', 42, 44, { continued: true });
-    document.fillColor(navy).text('AO');
+    if (fs.existsSync(logo)) document.image(logo, 42, 24, { fit: [145, 70], valign: 'center' });
+    else document.fillColor(navy).fontSize(28).font('Helvetica-Bold').text('GameAO', 42, 44);
     document.fillColor(grey).fontSize(9).font('Helvetica').text('Loja de videojogos em Angola', 42, 78);
     document.fillColor(navy).fontSize(21).font('Helvetica-Bold').text('FATURA', 390, 48, { align: 'right', width: 160 });
     document.fontSize(9).font('Helvetica').text(order.orderNumber, 390, 78, { align: 'right', width: 160 });
@@ -101,7 +102,7 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
   document.rect(370, y - 7, 154, 34).fill(template === 'modern' ? navy : orange);
   document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11).text('TOTAL', 382, y + 4).text(money(order.totalAoa), 450, y + 4, { width: 66, align: 'right' });
   y += 68;
-  document.fillColor(grey).font('Helvetica').fontSize(9).text(`Estado da encomenda: ${order.status} · Pagamento: ${order.paymentStatus}`, 42, y);
+  document.fillColor(grey).font('Helvetica').fontSize(9).text(`Estado do pedido: ${order.status} · Pagamento: ${order.paymentStatus}`, 42, y);
   document.text('Obrigado por comprar na GameAO.', 42, y + 22);
   document.end();
   return done;
