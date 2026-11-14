@@ -167,7 +167,7 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
     await createSession(user.id, request, response);
     response.status(201).json({ user });
   } catch (error) {
-    if (typeof error === 'object' && error && 'code' in error && error.code === 'ER_DUP_ENTRY') {
+    if (typeof error === 'object' && error && 'code' in error && (error.code === 'ER_DUP_ENTRY' || error.code === '23505')) {
       response.status(409).json({ error: 'email_in_use', message: 'Já existe uma conta com este email.' });
       return;
     }
@@ -225,7 +225,7 @@ app.put('/api/account/profile', asyncRoute(async (request, response) => {
     const updated = await getAuthenticatedUser(request);
     response.json({ user: updated });
   } catch (error) {
-    if (typeof error === 'object' && error && 'code' in error && error.code === 'ER_DUP_ENTRY') {
+    if (typeof error === 'object' && error && 'code' in error && (error.code === 'ER_DUP_ENTRY' || error.code === '23505')) {
       response.status(409).json({ error: 'email_in_use', message: 'Já existe uma conta com este email.' });
       return;
     }
@@ -291,15 +291,24 @@ app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRou
   const found = await findOrder(String(request.params.orderNumber).trim().toUpperCase());
   if (!found || !validEmail(email) || email !== String(found.order.customer_email).toLowerCase()) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
   if (!file) { response.status(400).json({ error: 'file_required', message: 'Selecione um comprovativo.' }); return; }
+  const requestedPaymentCode = String(request.body?.paymentMethod ?? '').trim();
+  let paymentMethodId = found.order.payment_method_id ?? null;
+  let paymentMethodCode = found.order.payment_method ?? null;
+  if (requestedPaymentCode) {
+    const [[selectedMethod]] = await getPool().query<any[]>(`SELECT id, code FROM payment_methods WHERE code = ? AND is_active = 1 LIMIT 1`, [requestedPaymentCode]);
+    if (!selectedMethod) { response.status(400).json({ error: 'invalid_payment_method', message: 'Selecione um método de pagamento ativo.' }); return; }
+    paymentMethodId = selectedMethod.id;
+    paymentMethodCode = selectedMethod.code;
+  }
   const extension = safeFileExtension(file.originalname);
   if (!PROOF_EXTENSIONS.has(extension) || !PROOF_MIME_TYPES.has(file.mimetype) || !hasValidFileSignature(file)) {
     response.status(400).json({ error: 'invalid_file', message: 'O ficheiro deve ser JPG, PNG, WEBP ou PDF válido.' }); return;
   }
   const key = `payment-proofs/${found.order.order_number}/${randomUUID()}${extension === '.jpeg' ? '.jpg' : extension}`;
   await putPrivateObject(key, file.buffer, file.mimetype);
-  await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?, 'submitted')`, [found.order.id, found.order.payment_method_id ?? null, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size]);
-  if (found.order.status === 'awaiting_payment') await getPool().execute(`UPDATE shop_orders SET status = 'payment_verification' WHERE id = ?`, [found.order.id]);
-  response.status(201).json({ ok: true, status: 'submitted', message: 'Comprovativo recebido. A confirmação será feita pela equipa GameAO após verificação.' });
+  await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?, 'submitted')`, [found.order.id, paymentMethodId, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size]);
+  await getPool().execute(`UPDATE shop_orders SET payment_method = ?, payment_method_id = ?, payment_status = 'paid', status = 'payment_confirmed' WHERE id = ?`, [paymentMethodCode, paymentMethodId, found.order.id]);
+  response.status(201).json({ ok: true, status: 'paid', message: 'Comprovativo recebido. O pedido foi marcado como pago e ficará disponível para processamento.' });
 }));
 
 app.get('/api/admin/payment-proofs', asyncRoute(async (request, response) => {

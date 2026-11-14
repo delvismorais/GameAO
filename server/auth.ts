@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import type { ResultSetHeader } from 'mysql2/promise';
 import { getPool, type DbRow } from './db';
 
 const SESSION_COOKIE = 'gameao_session';
@@ -80,11 +79,13 @@ export async function createSession(userId: number, request: Request, response: 
 export async function registerUser(input: { email: string; password: string; name: string; phone?: string }): Promise<AuthUser> {
   const email = input.email.trim().toLowerCase();
   const passwordHash = await bcrypt.hash(input.password, 12);
-  const [result] = await getPool().execute<ResultSetHeader>(
+  const [result] = await getPool().execute<any>(
     `INSERT INTO app_users (email, password_hash, name, phone) VALUES (?, ?, ?, ?)`,
     [email, passwordHash, input.name.trim(), input.phone?.trim() || null],
   );
-  return { id: Number(result.insertId), email, name: input.name.trim(), phone: input.phone?.trim() || null, role: 'customer', isActive: true };
+  const id = Number(Array.isArray(result) ? result[0]?.id : result?.insertId);
+  if (!Number.isInteger(id) || id <= 0) throw new Error('A base de dados não devolveu o identificador da conta.');
+  return { id, email, name: input.name.trim(), phone: input.phone?.trim() || null, role: 'customer', isActive: true };
 }
 
 export async function authenticateUser(emailInput: string, password: string): Promise<AuthUser | null> {
