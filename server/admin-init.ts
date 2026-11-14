@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { getPool, type DbRow } from './db';
+import type { RowDataPacket } from 'mysql2/promise';
+import { getPool } from './db';
 
 const email = process.env.GAMEAO_ADMIN_EMAIL?.trim().toLowerCase();
 const password = process.env.GAMEAO_ADMIN_PASSWORD;
@@ -14,7 +15,7 @@ if (!email || !password) {
 } else {
   const pool = getPool();
   const passwordHash = await bcrypt.hash(password, 12);
-  const [existing] = await pool.execute<DbRow[]>(
+  const [existing] = await pool.execute<(RowDataPacket & { id: number })[]>(
     `SELECT id FROM app_users WHERE email = ? LIMIT 1`,
     [email],
   );

@@ -3,8 +3,8 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import type { ViteDevServer } from 'vite';
-import { getPool, hasDatabaseUrl, isUniqueViolation, type DbResult } from './db';
+import { createServer as createViteServer, type ViteDevServer } from 'vite';
+import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
 import { createInvoicePdf, type InvoiceTemplate } from './invoices';
@@ -64,7 +64,7 @@ function parseArrayValue(value: unknown): string[] {
 
 async function readCatalogProducts(includeInactive = false) {
   const [rows] = await getPool().query<any[]>(
-    `SELECT p.*, string_agg(c.slug, ',' ORDER BY c.slug) AS category_slugs
+    `SELECT p.*, GROUP_CONCAT(c.slug ORDER BY c.slug SEPARATOR ',') AS category_slugs
        FROM catalog_products p
        LEFT JOIN catalog_product_categories pc ON pc.product_id = p.id
        LEFT JOIN catalog_categories c ON c.id = pc.category_id
@@ -123,7 +123,7 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
     await createSession(user.id, request, response);
     response.status(201).json({ user });
   } catch (error) {
-    if (isUniqueViolation(error)) {
+    if (typeof error === 'object' && error && 'code' in error && error.code === 'ER_DUP_ENTRY') {
       response.status(409).json({ error: 'email_in_use', message: 'Já existe uma conta com este email.' });
       return;
     }
@@ -181,7 +181,7 @@ app.put('/api/account/profile', asyncRoute(async (request, response) => {
     const updated = await getAuthenticatedUser(request);
     response.json({ user: updated });
   } catch (error) {
-    if (isUniqueViolation(error)) {
+    if (typeof error === 'object' && error && 'code' in error && error.code === 'ER_DUP_ENTRY') {
       response.status(409).json({ error: 'email_in_use', message: 'Já existe uma conta com este email.' });
       return;
     }
@@ -237,12 +237,7 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     }
     if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
-    const [insert] = await connection.execute<DbResult>(
-      `INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, internal_notes)
-       VALUES (?, encode(sha256(gen_random_uuid()::text::bytea), 'hex'), ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', NULL, ?)
-       RETURNING id`,
-      [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, subtotal, subtotal, rate, customer.notes ?? null],
-    );
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', NULL, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, subtotal, subtotal, rate, customer.notes ?? null]);
     const orderId = Number(insert.insertId);
     const orderNumber = `GA${orderId}`;
     await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);
@@ -298,7 +293,7 @@ app.put('/api/admin/settings/exchange-rate', asyncRoute(async (request, response
     return;
   }
   const config = { usdToAoa, source: String(request.body?.source ?? 'Configuração administrativa').trim(), updatedAt: new Date().toISOString().slice(0, 10), note: String(request.body?.note ?? '').trim() };
-  await getPool().execute(`INSERT INTO site_settings (setting_key, value_json) VALUES ('exchange_rate', ?) ON CONFLICT (setting_key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()`, [JSON.stringify(config)]);
+  await getPool().execute(`INSERT INTO site_settings (setting_key, value_json) VALUES ('exchange_rate', ?) ON DUPLICATE KEY UPDATE value_json = VALUES(value_json)`, [JSON.stringify(config)]);
   await recordAudit(user.id, 'update', 'setting', 'exchange_rate', config);
   response.json(config);
 }));
@@ -307,10 +302,10 @@ app.get('/api/admin/overview', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const user = await requireAdmin(request, response);
   if (!user) return;
-  const [[orders]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'awaiting_payment') AS pending, COUNT(*) FILTER (WHERE payment_status = 'paid') AS paid FROM shop_orders`);
+  const [[orders]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, SUM(status = 'awaiting_payment') AS pending, SUM(payment_status = 'paid') AS paid FROM shop_orders`);
   const [[customers]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total FROM app_users WHERE role = 'customer'`);
-  const [[products]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE is_active = 1) AS active FROM catalog_products`);
-  const [[posts]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'published') AS published FROM content_posts`);
+  const [[products]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, SUM(is_active = 1) AS active FROM catalog_products`);
+  const [[posts]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, SUM(status = 'published') AS published FROM content_posts`);
   response.json({
     orders: { total: Number(orders?.total ?? 0), pending: Number(orders?.pending ?? 0), paid: Number(orders?.paid ?? 0) },
     customers: { total: Number(customers?.total ?? 0) },
@@ -432,7 +427,6 @@ async function serveApp(): Promise<void> {
   const isProduction = process.env.NODE_ENV === 'production';
   let vite: ViteDevServer | undefined;
   if (!isProduction) {
-    const { createServer: createViteServer } = await import('vite');
     vite = await createViteServer({ server: { middlewareMode: true, host: '0.0.0.0' }, appType: 'spa', root });
     app.use(vite.middlewares);
   } else {
