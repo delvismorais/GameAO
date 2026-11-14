@@ -21,7 +21,13 @@ export function Checkout() {
   const { rate } = useSettings();
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const [customer, setCustomer] = useState<Customer>(() => ({ ...EMPTY_CUSTOMER, firstName: user?.name.split(' ')[0] ?? '', lastName: user?.name.split(' ').slice(1).join(' ') ?? '', email: user?.email ?? '', phone: user?.phone ?? '' }));
+  const [customer, setCustomer] = useState<Customer>(() => {
+    try {
+      const saved = sessionStorage.getItem('gameao-checkout-draft');
+      if (saved) return { ...EMPTY_CUSTOMER, ...JSON.parse(saved) } as Customer;
+    } catch { /* ignora rascunhos inválidos */ }
+    return { ...EMPTY_CUSTOMER, firstName: user?.name.split(' ')[0] ?? '', lastName: user?.name.split(' ').slice(1).join(' ') ?? '', email: user?.email ?? '', phone: user?.phone ?? '' };
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -31,8 +37,11 @@ export function Checkout() {
   const [playerIds, setPlayerIds] = useState<Record<string, string>>({});
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
   const [verifyingPlayer, setVerifyingPlayer] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { void fetch('/api/payment-methods').then((response) => response.ok ? response.json() : { methods: [] }).then((data: { methods?: PaymentMethod[] }) => setPaymentMethods(data.methods ?? [])); }, []);
+  useEffect(() => { void fetch('/api/payment-methods').then((response) => response.ok ? response.json() : { methods: [] }).then((data: { methods?: PaymentMethod[] }) => { const methods = data.methods ?? []; setPaymentMethods(methods); setPaymentMethod((current) => current || methods[0]?.code || ''); }); }, []);
+  useEffect(() => { try { sessionStorage.setItem('gameao-checkout-draft', JSON.stringify(customer)); } catch { /* armazenamento opcional */ } }, [customer]);
+  useEffect(() => { if (user) setCustomer((current) => ({ ...current, firstName: current.firstName || user.name.split(' ')[0] || '', lastName: current.lastName || user.name.split(' ').slice(1).join(' '), email: current.email || user.email || '', phone: current.phone || user.phone || '' })); }, [user]);
 
   const physicalLines = useMemo(() => cartLines.filter(({ product }) => product.categoryType === 'physical'), [cartLines]);
   const playerLines = useMemo(() => cartLines.filter(({ product }) => Boolean(product.requiresPlayerId) || (product.productSubtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(product.name))), [cartLines]);
@@ -50,6 +59,7 @@ export function Checkout() {
     if (!customer.lastName.trim()) next.lastName = 'Indique o apelido.';
     if (!customer.phone.trim() || customer.phone.replace(/\D/g, '').length < 9) next.phone = 'Indique um telefone válido (mínimo 9 dígitos).';
     if (!emailValid) next.email = 'Indique um email válido.';
+    if (paymentMethods.length > 0 && !paymentMethod) next.paymentMethod = 'Escolha um método de pagamento.';
     if (hasPhysical) {
       if (!customer.address.trim()) next.address = 'Indique o endereço de entrega.';
       if (!customer.city.trim()) next.city = 'Indique a cidade.';
@@ -70,14 +80,16 @@ export function Checkout() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submitting) return;
     if (!validate()) { showToast('Verifique os campos assinalados antes de confirmar o pedido.', 'error'); return; }
     for (const { product } of playerLines) if (!playerNames[product.id]) { showToast(`Verifique o ID de jogador de ${product.name} antes de continuar.`, 'error'); return; }
+    setSubmitting(true);
     let response: Response;
     try {
       response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, couponCode: couponCode.trim() || undefined, affiliateCode: normalizeAffiliateCode(affiliateCode) || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty, variantId: variantSelection[product.id] ? Number(variantSelection[product.id]) : undefined, playerId: playerIds[product.id] || undefined, playerNickname: playerNames[product.id] || undefined })) }) });
-    } catch { showToast('Não foi possível contactar o servidor. Verifique a ligação e tente novamente.', 'error'); return; }
-    if (!response.ok) { const data = await response.json().catch(() => null) as { message?: string } | null; showToast(data?.message ?? 'Não foi possível concluir o pedido.', 'error'); return; }
-    const data = await response.json() as { orderNumber: string }; clearCart(); navigate(`/checkout/confirmacao?order=${encodeURIComponent(data.orderNumber)}&email=${encodeURIComponent(customer.email)}`);
+    } catch { showToast('Não foi possível contactar o servidor. Verifique a ligação e tente novamente.', 'error'); setSubmitting(false); return; }
+    if (!response.ok) { const data = await response.json().catch(() => null) as { message?: string } | null; showToast(data?.message ?? 'Não foi possível concluir o pedido.', 'error'); setSubmitting(false); return; }
+    const data = await response.json() as { orderNumber: string }; sessionStorage.removeItem('gameao-checkout-draft'); clearCart(); navigate(`/checkout/confirmacao?order=${encodeURIComponent(data.orderNumber)}&email=${encodeURIComponent(customer.email)}`);
   };
 
   return <PageShell crumbs={[{ label: 'Carrinho', href: '/cart' }, { label: 'Finalizar Compra' }]}>
@@ -110,8 +122,8 @@ export function Checkout() {
       </div>
 
       <aside className="order-summary"><div className="order-summary__eyebrow">Resumo do pedido</div><h2>{hasPhysical && hasDigital ? 'Produtos físicos e digitais' : hasPhysical ? 'Entrega física' : 'Entrega digital'}</h2><ul className="order-summary__items">{cartLines.map(({ product, qty }) => <li key={product.id}><img src={product.imageCard} alt=""/><span className="order-summary__name">{product.name} × {qty}<small>{product.categoryType === 'physical' ? 'Físico' : playerLines.some(({ product: item }) => item.id === product.id) ? 'Digital · ID de jogador' : 'Digital'}</small></span><Price usd={getEffectivePriceUsd(product) * qty} size="sm"/></li>)}</ul><div className="order-summary__row"><span>Subtotal</span><span>{formatUsdAsAoa(cartSubtotalUsd, rate)}</span></div>{cartDiscountUsd > 0 && <div className="order-summary__row order-summary__row--discount"><span>Desconto</span><span>− {formatUsdAsAoa(cartDiscountUsd, rate)}</span></div>}<div className="order-summary__row order-summary__row--total"><span>Total</span><strong>{formatUsdAsAoa(totalUsd, rate)}</strong></div>
-        <div className="payment-box"><h3>Método de pagamento</h3>{paymentMethods.length > 0 ? <><label className="field"><span>Escolha uma modalidade</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="">Selecionar depois</option>{paymentMethods.map((method) => <option key={method.code} value={method.code}>{method.name}</option>)}</select></label>{paymentMethod && (() => { const method = paymentMethods.find((item) => item.code === paymentMethod); return method ? <div className="payment-instructions"><p className="payment-box__note">{method.customer_message || method.description}</p>{method.instructions && <p className="payment-box__note"><strong>Instruções:</strong> {method.instructions}</p>}{method.payment_deadline_hours && <p className="payment-box__note">Prazo indicado: {method.payment_deadline_hours} horas.</p>}{method.receiving_data && <div className="payment-receiving-data">{Object.entries(method.receiving_data).map(([key, value]) => <div key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</strong></div>)}</div>}</div> : null; })()}</> : <p className="payment-box__note">Os métodos de pagamento estão a ser configurados pela GameAO. O pedido ficará pendente até confirmação.</p>}<label className="field"><span>Cupão de desconto (opcional)</span><input value={couponCode} onChange={(event) => setCouponCode(event.target.value.toUpperCase())} placeholder="Código do cupão" /></label><label className="field"><span>Código de convite (opcional)</span><input value={affiliateCode} onChange={(event) => setAffiliateCode(normalizeAffiliateCode(event.target.value))} placeholder="Código do afiliado" /></label><p className="payment-box__note">Os preços são apresentados diretamente. O desconto final é validado no servidor.</p></div>
-        <p className="order-summary__privacy">Os dados só serão enviados para criar o pedido. Produtos digitais não exigem morada; produtos físicos exigem entrega.</p><button type="submit" className="btn btn--primary btn--block btn--lg">Efetuar pedido</button><Link to="/cart" className="order-summary__back">← Voltar ao carrinho</Link>
+        <div className="payment-box"><h3>Método de pagamento</h3>{paymentMethods.length > 0 ? <><label className={`field ${errors.paymentMethod ? 'has-error' : ''}`}><span>Escolha uma modalidade *</span><select value={paymentMethod} onChange={(event) => { setPaymentMethod(event.target.value); setErrors((current) => ({ ...current, paymentMethod: '' })); }}><option value="">Selecionar método</option>{paymentMethods.map((method) => <option key={method.code} value={method.code}>{method.name}</option>)}</select>{errors.paymentMethod && <small>{errors.paymentMethod}</small>}</label>{paymentMethod && (() => { const method = paymentMethods.find((item) => item.code === paymentMethod); return method ? <div className="payment-instructions"><p className="payment-box__note">{method.customer_message || method.description}</p>{method.instructions && <p className="payment-box__note"><strong>Instruções:</strong> {method.instructions}</p>}{method.payment_deadline_hours && <p className="payment-box__note">Prazo indicado: {method.payment_deadline_hours} horas.</p>}{method.receiving_data && <div className="payment-receiving-data">{Object.entries(method.receiving_data).map(([key, value]) => <div key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</strong></div>)}</div>}</div> : null; })()}</> : <p className="payment-box__note">Os métodos de pagamento estão a ser configurados pela GameAO. O pedido ficará pendente até confirmação.</p>}<label className="field"><span>Cupão de desconto (opcional)</span><input value={couponCode} onChange={(event) => setCouponCode(event.target.value.toUpperCase())} placeholder="Código do cupão" /></label><label className="field"><span>Código de convite (opcional)</span><input value={affiliateCode} onChange={(event) => setAffiliateCode(normalizeAffiliateCode(event.target.value))} placeholder="Código do afiliado" /></label><p className="payment-box__note">O desconto final é validado no servidor antes da criação da encomenda.</p></div>
+        <p className="order-summary__privacy">Os seus dados são usados apenas para criar e acompanhar a encomenda. Produtos digitais são entregues instantaneamente após confirmação; produtos físicos têm prazo mínimo de 24 horas.</p><button type="submit" className="btn btn--primary btn--block btn--lg" disabled={submitting}>{submitting ? 'A criar encomenda…' : 'Efetuar pedido'}</button><Link to="/cart" className="order-summary__back">← Voltar ao carrinho</Link>
       </aside>
     </form>
   </PageShell>;

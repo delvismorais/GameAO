@@ -51,7 +51,8 @@ export function OrderConfirmation() {
     setProofUploading(true); setProofMessage('');
     const body = new FormData(); body.append('file', proofFile); if (selectedPaymentMethod) body.append('paymentMethod', selectedPaymentMethod);
     try {
-      const response = await fetch(`/api/orders/${encodeURIComponent(number)}/proofs`, { method: 'POST', body });
+      const accessQuery = email ? `?email=${encodeURIComponent(email)}` : '';
+      const response = await fetch(`/api/orders/${encodeURIComponent(number)}/proofs${accessQuery}`, { method: 'POST', body, credentials: 'include' });
       const data = await response.json().catch(() => null) as { message?: string } | null;
       if (response.ok) { setProofMessage(data?.message ?? 'Comprovativo recebido. A equipa GameAO irá verificar o documento antes de confirmar o pagamento.'); setProofFile(null); await loadOrder(); }
       else setProofMessage(data?.message ?? 'Não foi possível enviar o comprovativo.');

@@ -19,7 +19,7 @@ import {
   notifyUserWelcome,
   type OrderStatus,
 } from './notifications';
-import { getPrivateObjectUrl, isStorageConfigured, publicObjectUrl, putPrivateObject } from './storage';
+import { getPrivateObjectUrl, isStorageConfigured, publicObjectUrl, putObject, putPrivateObject } from './storage';
 import { registerCommunicationRoutes } from './routes/communication';
 import { registerAdminModuleRoutes } from './routes/admin-modules';
 import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } from './affiliates';
@@ -658,13 +658,14 @@ app.post('/api/admin/media', imageUpload.single('file'), asyncRoute(async (reque
   if (!requireDatabase(response)) return;
   const admin = await requireAdmin(request, response);
   if (!admin) return;
-  if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento R2 ainda não está configurado.' }); return; }
+  if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento R2 não está configurado.' }); return; }
   const file = request.file;
   const kind = String(request.body?.kind ?? 'product').replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'product';
   if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype) || !hasValidImageSignature(file)) { response.status(400).json({ error: 'invalid_image', message: 'Envie uma imagem JPG, PNG ou WEBP válida.' }); return; }
   const extension = file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : '.webp';
   const key = `media/${kind}/${randomUUID()}${extension}`;
-  await putPrivateObject(key, file.buffer, file.mimetype);
+  // Imagens do catálogo são públicas; não devem ser gravadas no bucket privado.
+  await putObject(key, file.buffer, file.mimetype, false);
   const url = publicObjectUrl(key) ?? await getPrivateObjectUrl(key, 3600);
   await recordAudit(admin.id, 'media.upload', 'media', key, { kind, mimeType: file.mimetype, size: file.size });
   response.status(201).json({ key, url, public: Boolean(publicObjectUrl(key)) });
