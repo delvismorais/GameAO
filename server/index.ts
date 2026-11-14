@@ -3,12 +3,14 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import multer from 'multer';
 import type { ViteDevServer } from 'vite';
 import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
 import { createInvoicePdf, type InvoiceTemplate } from './invoices';
 import { notifyOrderStatusChanged, type OrderStatus } from './notifications';
+import { getPrivateObjectUrl, isStorageConfigured, publicObjectUrl, putPrivateObject } from './storage';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -17,6 +19,32 @@ let databaseState: { configured: boolean; ready: boolean; error?: string } = { c
 
 app.disable('x-powered-by');
 app.use('/api', express.json({ limit: '1mb' }));
+const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+
+const PROOF_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
+const PROOF_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+
+function safeFileExtension(name: string): string {
+  const match = name.toLowerCase().match(/\.[a-z0-9]+$/);
+  return match?.[0] ?? '';
+}
+
+function hasValidFileSignature(file: Express.Multer.File): boolean {
+  const bytes = file.buffer;
+  if (file.mimetype === 'application/pdf') return bytes.subarray(0, 5).toString('ascii') === '%PDF-';
+  if (file.mimetype === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (file.mimetype === 'image/png') return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (file.mimetype === 'image/webp') return bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+  return false;
+}
+
+function hasValidImageSignature(file: Express.Multer.File): boolean {
+  const bytes = file.buffer;
+  return (file.mimetype === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    || (file.mimetype === 'image/png' && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+    || (file.mimetype === 'image/webp' && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP');
+}
 
 function asyncRoute(handler: (request: Request, response: Response, next: NextFunction) => Promise<void>) {
   return (request: Request, response: Response, next: NextFunction) => handler(request, response, next).catch(next);
@@ -205,7 +233,9 @@ async function findOrder(orderNumber: string) {
   const [[order]] = await getPool().query<any[]>(`SELECT * FROM shop_orders WHERE order_number = ? LIMIT 1`, [orderNumber]);
   if (!order) return null;
   const [items] = await getPool().query<any[]>(`SELECT i.*, p.image_card_url FROM shop_order_items i LEFT JOIN catalog_products p ON p.id = i.product_id WHERE i.order_id = ? ORDER BY i.id ASC`, [order.id]);
-  return { order, items };
+  const [[paymentMethod]] = await getPool().query<any[]>(`SELECT id, code, name, description, instructions, receiving_data_json, requires_proof, payment_deadline_hours, customer_message FROM payment_methods WHERE id = ? LIMIT 1`, [order.payment_method_id]);
+  const [proofs] = await getPool().query<any[]>(`SELECT id, original_name, mime_type, size_bytes, status, admin_note, submitted_at, reviewed_at FROM payment_proofs WHERE order_id = ? ORDER BY submitted_at DESC`, [order.id]);
+  return { order, items, paymentMethod: paymentMethod ? { ...paymentMethod, receiving_data: typeof paymentMethod.receiving_data_json === 'string' ? JSON.parse(paymentMethod.receiving_data_json) : paymentMethod.receiving_data_json } : null, proofs };
 }
 
 function chooseInvoiceTemplate(value: unknown): InvoiceTemplate { return value === 'modern' ? 'modern' : 'classic'; }
@@ -236,6 +266,66 @@ app.put('/api/admin/payment-methods/:id', asyncRoute(async (request, response) =
   const [[method]] = await getPool().query<any[]>(`SELECT * FROM payment_methods WHERE id = ? LIMIT 1`, [id]);
   response.json({ method });
 }));
+
+app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento seguro de comprovativos ainda não está configurado.' }); return; }
+  const email = String(request.body?.email ?? '').trim().toLowerCase();
+  const file = request.file;
+  const found = await findOrder(String(request.params.orderNumber).trim().toUpperCase());
+  if (!found || !validEmail(email) || email !== String(found.order.customer_email).toLowerCase()) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  if (!file) { response.status(400).json({ error: 'file_required', message: 'Selecione um comprovativo.' }); return; }
+  const extension = safeFileExtension(file.originalname);
+  if (!PROOF_EXTENSIONS.has(extension) || !PROOF_MIME_TYPES.has(file.mimetype) || !hasValidFileSignature(file)) {
+    response.status(400).json({ error: 'invalid_file', message: 'O ficheiro deve ser JPG, PNG, WEBP ou PDF válido.' }); return;
+  }
+  const key = `payment-proofs/${found.order.order_number}/${randomUUID()}${extension === '.jpeg' ? '.jpg' : extension}`;
+  await putPrivateObject(key, file.buffer, file.mimetype);
+  await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?, 'submitted')`, [found.order.id, found.order.payment_method_id ?? null, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size]);
+  if (found.order.status === 'awaiting_payment') await getPool().execute(`UPDATE shop_orders SET status = 'payment_verification' WHERE id = ?`, [found.order.id]);
+  response.status(201).json({ ok: true, status: 'submitted', message: 'Comprovativo recebido. A confirmação será feita pela equipa GameAO após verificação.' });
+}));
+
+app.get('/api/admin/payment-proofs', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const status = String(request.query.status ?? '').trim();
+  const params: unknown[] = [];
+  const where = status ? 'WHERE p.status = ?' : '';
+  if (status) params.push(status);
+  const [proofs] = await getPool().query<any[]>(`SELECT p.id, p.order_id, p.original_name, p.mime_type, p.size_bytes, p.status, p.admin_note, p.submitted_at, p.reviewed_at, o.order_number, o.customer_name, o.customer_email, o.total_aoa, o.payment_status, o.status AS order_status, pm.name AS payment_method_name FROM payment_proofs p JOIN shop_orders o ON o.id = p.order_id LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id ${where} ORDER BY p.submitted_at DESC LIMIT 200`, params);
+  response.json({ proofs });
+}));
+
+app.get('/api/admin/payment-proofs/:id/file', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const [[proof]] = await getPool().query<any[]>(`SELECT storage_key, mime_type, original_name FROM payment_proofs WHERE id = ? LIMIT 1`, [Number(request.params.id)]);
+  if (!proof) { response.status(404).json({ error: 'proof_not_found', message: 'Comprovativo não encontrado.' }); return; }
+  response.json({ url: await getPrivateObjectUrl(proof.storage_key), mimeType: proof.mime_type, name: proof.original_name });
+}));
+
+app.patch('/api/admin/payment-proofs/:id/review', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const action = String(request.body?.action ?? '');
+  const note = typeof request.body?.note === 'string' ? request.body.note.trim().slice(0, 2000) : null;
+  const nextProofStatus = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : action === 'request_new' ? 'needs_new_proof' : '';
+  if (!nextProofStatus) { response.status(400).json({ error: 'invalid_review', message: 'Ação de revisão inválida.' }); return; }
+  const [[proof]] = await getPool().query<any[]>(`SELECT id, order_id FROM payment_proofs WHERE id = ? LIMIT 1`, [Number(request.params.id)]);
+  if (!proof) { response.status(404).json({ error: 'proof_not_found', message: 'Comprovativo não encontrado.' }); return; }
+  const [[order]] = await getPool().query<any[]>(`SELECT order_number, payment_status, status FROM shop_orders WHERE id = ? LIMIT 1`, [proof.order_id]);
+  if (!order) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+  await getPool().execute(`UPDATE payment_proofs SET status = ?, admin_note = ?, reviewed_at = NOW(), reviewed_by_user_id = ? WHERE id = ?`, [nextProofStatus, note, admin.id, proof.id]);
+  if (action === 'approve') await getPool().execute(`UPDATE shop_orders SET payment_status = 'paid', status = 'payment_confirmed' WHERE id = ?`, [proof.order_id]);
+  if (action === 'reject' || action === 'request_new') await getPool().execute(`UPDATE shop_orders SET payment_status = 'pending', status = 'awaiting_payment' WHERE id = ? AND payment_status <> 'paid'`, [proof.order_id]);
+  await recordAudit(admin.id, `payment_proof.${action}`, 'payment_proof', String(proof.id), { orderNumber: order.order_number, note });
+  response.json({ ok: true, proofStatus: nextProofStatus, orderNumber: order.order_number });
+}));
+
 app.post('/api/orders', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const body = request.body ?? {};
@@ -335,12 +425,12 @@ app.get('/api/admin/overview', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const user = await requireAdmin(request, response);
   if (!user) return;
-  const [[orders]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, SUM(status = 'awaiting_payment') AS pending, SUM(payment_status = 'paid') AS paid FROM shop_orders`);
+  const [[orders]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, COALESCE(SUM(total_aoa), 0) AS revenue, COALESCE(SUM(CASE WHEN created_at::date = CURRENT_DATE THEN total_aoa ELSE 0 END), 0) AS revenue_today, COALESCE(SUM(CASE WHEN date_trunc('month', created_at) = date_trunc('month', NOW()) THEN total_aoa ELSE 0 END), 0) AS revenue_month, SUM(status = 'awaiting_payment') AS pending, SUM(payment_status = 'pending') AS payment_pending, SUM(payment_status = 'paid') AS paid, SUM(status = 'processing') AS processing, SUM(status = 'completed') AS completed FROM shop_orders`);
   const [[customers]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total FROM app_users WHERE role = 'customer'`);
   const [[products]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, SUM(is_active = 1) AS active FROM catalog_products`);
   const [[posts]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total, SUM(status = 'published') AS published FROM content_posts`);
   response.json({
-    orders: { total: Number(orders?.total ?? 0), pending: Number(orders?.pending ?? 0), paid: Number(orders?.paid ?? 0) },
+    orders: { total: Number(orders?.total ?? 0), revenue: Number(orders?.revenue ?? 0), revenueToday: Number(orders?.revenue_today ?? 0), revenueMonth: Number(orders?.revenue_month ?? 0), pending: Number(orders?.pending ?? 0), paymentPending: Number(orders?.payment_pending ?? 0), paid: Number(orders?.paid ?? 0), processing: Number(orders?.processing ?? 0), completed: Number(orders?.completed ?? 0) },
     customers: { total: Number(customers?.total ?? 0) },
     products: { total: Number(products?.total ?? 0), active: Number(products?.active ?? 0) },
     posts: { total: Number(posts?.total ?? 0), published: Number(posts?.published ?? 0) },
@@ -381,6 +471,22 @@ app.get('/api/admin/products', asyncRoute(async (request, response) => {
   const user = await requireAdmin(request, response);
   if (!user) return;
   response.json({ products: await readCatalogProducts(true) });
+}));
+
+app.post('/api/admin/media', imageUpload.single('file'), asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento R2 ainda não está configurado.' }); return; }
+  const file = request.file;
+  const kind = String(request.body?.kind ?? 'product').replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'product';
+  if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype) || !hasValidImageSignature(file)) { response.status(400).json({ error: 'invalid_image', message: 'Envie uma imagem JPG, PNG ou WEBP válida.' }); return; }
+  const extension = file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : '.webp';
+  const key = `media/${kind}/${randomUUID()}${extension}`;
+  await putPrivateObject(key, file.buffer, file.mimetype);
+  const url = publicObjectUrl(key) ?? await getPrivateObjectUrl(key, 3600);
+  await recordAudit(admin.id, 'media.upload', 'media', key, { kind, mimeType: file.mimetype, size: file.size });
+  response.status(201).json({ key, url, public: Boolean(publicObjectUrl(key)) });
 }));
 
 app.post('/api/admin/products', asyncRoute(async (request, response) => {

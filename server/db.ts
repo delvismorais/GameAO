@@ -12,7 +12,7 @@ function translateSql(source: string, params: unknown[]): { text: string; values
   text = text.replace(/ON DUPLICATE KEY UPDATE\s+value_json\s*=\s*VALUES\(value_json\)/gi, 'ON CONFLICT (setting_key) DO UPDATE SET value_json = EXCLUDED.value_json');
   text = text.replace(/DATE_ADD\(NOW\(\),\s*INTERVAL\s+\?\s+DAY\)/gi, "NOW() + (? * INTERVAL '1 day')");
   text = text.replace(/SHA2\(UUID\(\),\s*256\)/gi, "encode(digest(gen_random_uuid()::text, 'sha256'), 'hex')");
-  text = text.replace(/SUM\(status\s*=\s*'([^']+)'\)/gi, "SUM(CASE WHEN status = '$1' THEN 1 ELSE 0 END)");
+  text = text.replace(/SUM\(([\w.]+)\s*=\s*'([^']+)'\)/gi, "SUM(CASE WHEN $1 = '$2' THEN 1 ELSE 0 END)");
   text = text.replace(/SUM\(is_active\s*=\s*1\)/gi, 'SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END)');
   if (ignoreInsert) text += ' ON CONFLICT DO NOTHING';
   let index = 0;

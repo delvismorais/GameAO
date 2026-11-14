@@ -6,7 +6,7 @@ import { Icon } from '../components/ui/Icon';
 import { useStore } from '../context/StoreContext';
 import { formatDatePt, formatUsdAsAoa } from '../lib/pricing';
 
-type ServerOrder = { order: { order_number: string; created_at: string; customer_name: string; customer_email: string; customer_phone: string; billing_address?: string; billing_city?: string; billing_province?: string; total_aoa: number; exchange_rate_usd_aoa: number; status: string; payment_status: string }; items: Array<{ product_name: string; image_card_url?: string; quantity: number; subtotal_aoa: number }> };
+type ServerOrder = { order: { order_number: string; created_at: string; customer_name: string; customer_email: string; customer_phone: string; billing_address?: string; billing_city?: string; billing_province?: string; total_aoa: number; exchange_rate_usd_aoa: number; status: string; payment_status: string }; paymentMethod?: { name: string; instructions: string; customer_message: string; requires_proof: number; payment_deadline_hours: number; receiving_data?: Record<string, unknown> } | null; proofs?: Array<{ id: number; original_name: string; status: string; submitted_at: string }>; items: Array<{ product_name: string; image_card_url?: string; quantity: number; subtotal_aoa: number }> };
 
 export function OrderConfirmation() {
   const [params] = useSearchParams();
@@ -16,6 +16,9 @@ export function OrderConfirmation() {
   const localOrder = orders.find((item) => item.id === orderId);
   const [serverOrder, setServerOrder] = useState<ServerOrder | null>(null);
   const [loading, setLoading] = useState(Boolean(orderId && !localOrder));
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofMessage, setProofMessage] = useState('');
+  const [proofUploading, setProofUploading] = useState(false);
 
   useEffect(() => {
     if (!orderId || localOrder) return;
@@ -25,6 +28,18 @@ export function OrderConfirmation() {
       .catch(() => setServerOrder(null))
       .finally(() => setLoading(false));
   }, [email, localOrder, orderId]);
+
+  const submitProof = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!proofFile || !serverOrder) return;
+    setProofUploading(true); setProofMessage('');
+    const body = new FormData(); body.append('email', email); body.append('file', proofFile);
+    const response = await fetch(`/api/orders/${encodeURIComponent(number)}/proofs`, { method: 'POST', body });
+    const data = await response.json().catch(() => null) as { message?: string } | null;
+    if (response.ok) { setProofMessage(data?.message ?? 'Comprovativo enviado para verificação.'); setProofFile(null); }
+    else setProofMessage(data?.message ?? 'Não foi possível enviar o comprovativo.');
+    setProofUploading(false);
+  };
 
   if (loading) return <PageShell crumbs={[{ label: 'Confirmação' }]}><p className="admin-state">A carregar a encomenda…</p></PageShell>;
   if (!localOrder && !serverOrder) return <PageShell crumbs={[{ label: 'Confirmação' }]}><EmptyState title="Encomenda não encontrada" icon="🧾" action={<Link to="/shop" className="btn btn--primary">Voltar à loja</Link>}>Confirme o número e o email usados no checkout.</EmptyState></PageShell>;
@@ -51,6 +66,7 @@ export function OrderConfirmation() {
           <div><span>Pagamento</span><strong>{server?.payment_status ?? 'Pendente'}</strong></div>
         </div>
         {items && <><h2 className="order-confirmation__heading">Artigos</h2><ul className="order-confirmation__items">{items.map((item) => <li key={item.product_name}><img src={item.image_card_url ?? '/assets/logo.png'} alt="" /><span>{item.product_name} × {item.quantity}</span><strong>{formatUsdAsAoa(Number(item.subtotal_aoa) / rate, rate)}</strong></li>)}</ul></>}
+        {serverOrder?.paymentMethod && <section className="payment-box order-confirmation__payment"><h2 className="order-confirmation__heading">Instruções de pagamento · {serverOrder.paymentMethod.name}</h2><p>{serverOrder.paymentMethod.customer_message}</p><p>{serverOrder.paymentMethod.instructions}</p>{serverOrder.paymentMethod.receiving_data && <pre>{JSON.stringify(serverOrder.paymentMethod.receiving_data, null, 2)}</pre>}{serverOrder.paymentMethod.requires_proof ? <form className="admin-form" onSubmit={submitProof}><label className="field"><span>Comprovativo (JPG, PNG, WEBP ou PDF; máximo 10 MB)</span><input required type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} /></label><button className="btn btn--primary" type="submit" disabled={proofUploading}>{proofUploading ? 'A enviar…' : 'Enviar comprovativo'}</button>{proofMessage && <p className="admin-message">{proofMessage}</p>}</form> : <p>Não é necessário enviar comprovativo para este método.</p>}{serverOrder.proofs?.length ? <p className="admin-message">Último comprovativo: {serverOrder.proofs[0].status}.</p> : null}</section>}
         <div className="order-confirmation__actions">
           <a href={`/api/orders/${encodeURIComponent(number)}/invoice?email=${encodeURIComponent(email)}&template=classic`} className="btn btn--primary" download>Baixar fatura · Modelo clássico</a>
           <a href={`/api/orders/${encodeURIComponent(number)}/invoice?email=${encodeURIComponent(email)}&template=modern`} className="btn btn--outline" download>Baixar fatura · Modelo moderno</a>
