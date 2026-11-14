@@ -62,7 +62,15 @@ class PoolAdapter {
 
 export function getPool(): PoolAdapter {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não está configurada.');
-  if (!pool) pool = new Pool({ connectionString: process.env.DATABASE_URL, max: Number(process.env.DB_POOL_SIZE ?? 8), ssl: { rejectUnauthorized: false } });
+  if (!pool) {
+    const connectionOptions: pg.PoolConfig = {
+      connectionString: process.env.DATABASE_URL,
+      max: Number(process.env.DB_POOL_SIZE ?? 8),
+      ssl: { rejectUnauthorized: false },
+    };
+    if (process.env.DB_PASSWORD) connectionOptions.password = process.env.DB_PASSWORD;
+    pool = new Pool(connectionOptions);
+  }
   return new PoolAdapter(pool);
 }
 
