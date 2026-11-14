@@ -3,29 +3,24 @@
  * Todos os preços visíveis devem passar por estas funções.
  */
 
-/** Converte um valor base em USD para AOA com arredondamento a 2 casas. */
+/** Compatibilidade interna para cálculos históricos; não é usado para a apresentação pública. */
 export function usdToAoa(usd: number, rate: number): number {
   if (!Number.isFinite(usd) || !Number.isFinite(rate) || rate <= 0) return 0;
   return Math.round(usd * rate * 100) / 100;
 }
 
 /**
- * Formata um valor em kwanzas no padrão angolano pedido:
- * ponto para milhares, vírgula para decimais e sufixo Kz — 79.000,00 Kz.
- * A formatação é manual para garantir este formato em todos os browsers.
+ * Formata um valor monetário direto, sem apresentar conversão cambial.
  */
 export function formatAoa(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
-  const fixed = Math.abs(safe).toFixed(2);
-  const [integer, decimals] = fixed.split('.');
-  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  const sign = safe < 0 ? '-' : '';
-  return `${sign}${grouped},${decimals} Kz`;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe);
 }
 
-/** Converte diretamente de USD para o texto em kwanzas. */
-export function formatUsdAsAoa(usd: number, rate: number): string {
-  return formatAoa(usdToAoa(usd, rate));
+/** Formata o preço base diretamente, sem apresentar conversão cambial. */
+export function formatUsdAsAoa(usd: number, _rate?: number): string {
+  const safe = Number.isFinite(usd) ? usd : 0;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe);
 }
 
 /** Percentagem de desconto inteira (ex.: 34). */

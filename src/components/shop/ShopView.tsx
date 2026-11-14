@@ -193,7 +193,7 @@ export function ShopView({ category }: ShopViewProps) {
               value={minDraft}
               onChange={(event) => setMinDraft(event.target.value)}
               placeholder="Mínimo"
-              aria-label="Preço mínimo em kwanzas"
+              aria-label="Preço mínimo"
             />
             <span>—</span>
             <input
@@ -203,14 +203,14 @@ export function ShopView({ category }: ShopViewProps) {
               value={maxDraft}
               onChange={(event) => setMaxDraft(event.target.value)}
               placeholder="Máximo"
-              aria-label="Preço máximo em kwanzas"
+              aria-label="Preço máximo"
             />
           </div>
           <button type="button" className="btn btn--primary btn--sm" onClick={applyPrice}>
             Filtrar
           </button>
           <p className="price-filter__hint">
-            Preços em Kz. Ex.: {formatUsdAsAoa(15, rate)} — {formatUsdAsAoa(89, rate)}.
+            Intervalo de preços. Ex.: {formatUsdAsAoa(15, rate)} — {formatUsdAsAoa(89, rate)}.
           </p>
         </div>
       </div>

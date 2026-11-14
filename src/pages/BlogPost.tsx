@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { PageShell } from '../components/layout/PageShell';
 import { BlogSidebar } from '../components/blog/BlogSidebar';
@@ -16,12 +16,22 @@ export function BlogPost() {
   const { comments, addComment } = useStore();
   const { showToast } = useToast();
   const [form, setForm] = useState({ author: '', email: '', text: '' });
+  const [remoteComments, setRemoteComments] = useState<Array<{ id: number; author_name: string; content: string; created_at: string }>>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!post) return <Navigate to="/category/news" replace />;
 
   const postComments = comments.filter((comment) => comment.postSlug === post.slug);
-  const totalComments = post.commentsCount + postComments.length;
+  const totalComments = post.commentsCount + remoteComments.length + (remoteComments.length ? 0 : postComments.length);
   const related = POSTS.filter((item) => item.slug !== post.slug).slice(0, 3);
+
+  useEffect(() => {
+    let active = true;
+    setCommentsLoading(true);
+    void fetch(`/api/blog/posts/${encodeURIComponent(post.slug)}/comments`).then((response) => response.ok ? response.json() : { comments: [] }).then((data: { comments?: typeof remoteComments }) => { if (active) setRemoteComments(data.comments ?? []); }).catch(() => undefined).finally(() => { if (active) setCommentsLoading(false); });
+    return () => { active = false; };
+  }, [post.slug]);
 
   const share = async () => {
     try {
@@ -32,15 +42,23 @@ export function BlogPost() {
     }
   };
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.author.trim() || !form.email.trim() || form.text.trim().length < 5) {
       showToast('Preencha o nome, email e um comentário com pelo menos 5 caracteres.', 'error');
       return;
     }
-    addComment(post.slug, form.author, form.text);
-    setForm({ author: '', email: '', text: '' });
-    showToast('Comentário publicado.');
+    setSubmitting(true);
+    try {
+      const response = await fetch(`/api/blog/posts/${encodeURIComponent(post.slug)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ name: form.author, email: form.email, content: form.text }) });
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(data?.message || 'Não foi possível enviar o comentário.');
+      setForm({ author: '', email: '', text: '' });
+      showToast(data?.message || 'Comentário recebido para moderação.', 'info');
+    } catch (error) {
+      addComment(post.slug, form.author, form.text);
+      showToast(error instanceof Error ? `${error.message} O comentário ficou guardado localmente.` : 'Não foi possível enviar o comentário.', 'error');
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -106,7 +124,13 @@ export function BlogPost() {
                 </div>
               </div>
             )}
-            {postComments.map((comment) => (
+            {remoteComments.map((comment) => (
+              <div className="comment" key={`remote-${comment.id}`}>
+                <div className="comment__avatar">{comment.author_name.charAt(0).toUpperCase()}</div>
+                <div className="comment__body"><strong>{comment.author_name}</strong><span>{formatDatePt(comment.created_at)}</span><p>{comment.content}</p></div>
+              </div>
+            ))}
+            {!commentsLoading && remoteComments.length === 0 && postComments.map((comment) => (
               <div className="comment" key={comment.id}>
                 <div className="comment__avatar">{comment.author.charAt(0).toUpperCase()}</div>
                 <div className="comment__body">
@@ -119,7 +143,7 @@ export function BlogPost() {
 
             <form className="comment-form" onSubmit={submit}>
               <h2>Deixar um comentário</h2>
-              <p>O seu endereço de email não será publicado. Os comentários ficam guardados neste dispositivo.</p>
+              <p>O seu endereço de email não será publicado. Os comentários são analisados pela equipa antes de ficarem visíveis.</p>
               <label className="field">
                 <span>Comentário *</span>
                 <textarea rows={4} value={form.text} onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))} />
@@ -134,7 +158,7 @@ export function BlogPost() {
                   <input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
                 </label>
               </div>
-              <button type="submit" className="btn btn--primary">Publicar comentário</button>
+              <button type="submit" className="btn btn--primary" disabled={submitting}>{submitting ? 'A enviar…' : 'Enviar comentário'}</button>
             </form>
           </section>
 

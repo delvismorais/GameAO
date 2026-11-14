@@ -12,12 +12,12 @@ export function About() {
             <h1>Sobre a nossa loja</h1>
             <p>
               A GameAO é uma loja de videojogos pensada para jogadores em Angola. Reunimos num só
-              lugar títulos para PC, Xbox e PlayStation, com preços em kwanzas e informação clara
+              lugar títulos para PC, Xbox e PlayStation, com informação clara
               sobre cada jogo.
             </p>
             <p>
               A GameAO preserva uma experiência visual inspirada no GameShop e está a evoluir para
-              uma plataforma administrável de raiz. A taxa USD/AOA é configurável e todos os preços
+              uma plataforma administrável de raiz. Os preços
               atualizam-se automaticamente.
             </p>
             <p className="about-intro__note">

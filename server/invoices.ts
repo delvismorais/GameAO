@@ -34,8 +34,9 @@ const navy = '#081018';
 const grey = '#66717d';
 const light = '#eef1f5';
 
-function money(value: number): string {
-  return `${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value))} Kz`;
+function money(value: number, rate = 1): string {
+  const direct = Number(value) / (Number(rate) > 0 ? Number(rate) : 1);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(direct) ? direct : 0);
 }
 
 function date(value: Date | string): string {
@@ -74,14 +75,14 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
 
   let y = template === 'modern' ? 144 : 132;
   document.fillColor(navy).fontSize(10).font('Helvetica-Bold').text('DADOS DA LOJA', 42, y);
-  document.font('Helvetica').fontSize(9).fillColor(grey).text('GameAO · Angola', 42, y + 18).text('Email: suporte@gameao.ao', 42, y + 32).text('Moeda: Kwanza (Kz)', 42, y + 46);
+  document.font('Helvetica').fontSize(9).fillColor(grey).text('GameAO · Angola', 42, y + 18).text('Email: suporte@gameao.ao', 42, y + 32).text('Preços apresentados diretamente', 42, y + 46);
   document.fillColor(navy).font('Helvetica-Bold').text('DADOS DO CLIENTE', 315, y);
   document.font('Helvetica').fontSize(9).fillColor(grey).text(order.customerName, 315, y + 18).text(order.customerEmail, 315, y + 32).text(order.customerPhone, 315, y + 46);
   if (order.billingAddress || order.billingCity) document.text([order.billingAddress, order.billingCity, order.billingProvince].filter(Boolean).join(', '), 315, y + 60, { width: 230 });
   y += 100;
 
   document.fillColor(navy).font('Helvetica-Bold').fontSize(10).text(`Data de emissão: ${date(order.createdAt)}`, 42, y);
-  document.font('Helvetica').fontSize(9).fillColor(grey).text(`Taxa aplicada: 1 USD = ${money(order.exchangeRate)}`, 315, y, { width: 230, align: 'right' });
+  document.font('Helvetica').fontSize(9).fillColor(grey).text('Valores apresentados diretamente', 315, y, { width: 230, align: 'right' });
   y += 26;
   document.rect(42, y, width, 26).fill(template === 'modern' ? orange : navy);
   document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9).text('PRODUTO', 52, y + 8).text('QTD.', 350, y + 8).text('PREÇO', 405, y + 8).text('TOTAL', 484, y + 8);
@@ -92,15 +93,15 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
     const img = imagePath(item.imageUrl, root);
     if (img) document.image(img, 50, y + 5, { fit: [34, 34] });
     document.fillColor(navy).font('Helvetica').fontSize(9).text(item.name, img ? 94 : 52, y + 15, { width: 235, ellipsis: true });
-    document.text(String(item.quantity), 350, y + 15).text(money(item.unitPriceAoa), 405, y + 15).font('Helvetica-Bold').text(money(item.subtotalAoa), 484, y + 15);
+    document.text(String(item.quantity), 350, y + 15).text(money(item.unitPriceAoa, order.exchangeRate), 405, y + 15).font('Helvetica-Bold').text(money(item.subtotalAoa, order.exchangeRate), 484, y + 15);
     y += 43;
   }
   y += 20;
-  document.fillColor(grey).font('Helvetica').fontSize(10).text('Subtotal', 385, y).fillColor(navy).text(money(order.subtotalAoa), 484, y);
-  if (order.discountAoa > 0) { y += 18; document.fillColor(grey).text('Desconto', 385, y).fillColor('#2e9e5b').text(`− ${money(order.discountAoa)}`, 484, y); }
+  document.fillColor(grey).font('Helvetica').fontSize(10).text('Subtotal', 385, y).fillColor(navy).text(money(order.subtotalAoa, order.exchangeRate), 484, y);
+  if (order.discountAoa > 0) { y += 18; document.fillColor(grey).text('Desconto', 385, y).fillColor('#2e9e5b').text(`− ${money(order.discountAoa, order.exchangeRate)}`, 484, y); }
   y += 26;
   document.rect(370, y - 7, 154, 34).fill(template === 'modern' ? navy : orange);
-  document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11).text('TOTAL', 382, y + 4).text(money(order.totalAoa), 450, y + 4, { width: 66, align: 'right' });
+  document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11).text('TOTAL', 382, y + 4).text(money(order.totalAoa, order.exchangeRate), 450, y + 4, { width: 66, align: 'right' });
   y += 68;
   document.fillColor(grey).font('Helvetica').fontSize(9).text(`Estado do pedido: ${order.status} · Pagamento: ${order.paymentStatus}`, 42, y);
   document.text('Obrigado por comprar na GameAO.', 42, y + 22);

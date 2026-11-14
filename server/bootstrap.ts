@@ -5,6 +5,59 @@ import { CATEGORIES, PRODUCTS } from '../src/data/products';
 import { POSTS } from '../src/data/posts';
 import { getPool, hasDatabaseUrl, withConnection } from './db';
 
+/**
+ * Divide um ficheiro SQL em instruções, respeitando strings entre aspas
+ * simples, identificadores entre aspas duplas e blocos dollar-quoted.
+ * O `sql.split(';')` anterior quebrava quando os modelos de email
+ * continham HTML/CSS com ponto e vírgula.
+ */
+export function splitSqlStatements(source: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let quote: "'" | '"' | null = null;
+  let dollarTag: string | null = null;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (dollarTag) {
+      current += char;
+      if (source.startsWith(dollarTag, index)) {
+        current += dollarTag.slice(1);
+        index += dollarTag.length - 1;
+        dollarTag = null;
+      }
+      continue;
+    }
+    if (quote) {
+      current += char;
+      if (char === quote) {
+        if (next === quote) { current += next; index += 1; } else { quote = null; }
+      }
+      continue;
+    }
+    if (char === '-' && next === '-') {
+      const lineEnd = source.indexOf('\n', index);
+      const end = lineEnd === -1 ? source.length : lineEnd;
+      current += source.slice(index, end);
+      index = end - 1;
+      continue;
+    }
+    if (char === "'" || char === '"') { quote = char; current += char; continue; }
+    if (char === '$') {
+      const match = source.slice(index).match(/^\$[A-Za-z_]*\$/);
+      if (match) { dollarTag = match[0]; current += match[0]; index += match[0].length - 1; continue; }
+    }
+    if (char === ';') {
+      if (current.trim()) statements.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) statements.push(current.trim());
+  return statements.filter((statement) => statement.replace(/--[^\n]*/g, '').trim().length > 0);
+}
+
 async function runMigration(): Promise<void> {
   const connection = await getPool().getConnection();
   try {
@@ -12,13 +65,13 @@ async function runMigration(): Promise<void> {
     const migrationFiles = (await readdir(migrationDir)).filter((file) => file.endsWith('.sql')).sort();
     for (const file of migrationFiles) {
       const sql = await readFile(path.join(migrationDir, file), 'utf8');
-      const statements = sql.split(';').map((statement) => statement.trim()).filter(Boolean);
+      const statements = splitSqlStatements(sql);
       for (const statement of statements) {
         try {
           await connection.query(statement);
         } catch (error) {
           const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
-          if (code === 'ER_DUP_FIELDNAME' || code === 'ER_TABLE_EXISTS_ERROR') continue;
+          if (code === 'ER_DUP_FIELDNAME' || code === 'ER_TABLE_EXISTS_ERROR' || code === '42701' || code === '42P07' || code === '42P16') continue;
           throw error;
         }
       }

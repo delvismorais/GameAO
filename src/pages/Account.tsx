@@ -101,6 +101,7 @@ export function Account() {
             <p className="account-nav__greeting">Olá, <strong>{user.name}</strong></p>
             <Link to="/my-account" className="is-active"><Icon name="user" /> Dados da conta</Link>
             <Link to="/my-account/orders"><Icon name="cart" /> Compras <span>{orders.length}</span></Link>
+            <Link to="/my-account/affiliate"><Icon name="user" /> Programa de afiliados</Link>
             <Link to="/wishlist"><Icon name="heart" /> Lista de desejos</Link>
             <Link to="/compare"><Icon name="compare" /> Comparar produtos</Link>
             {(user.role === 'admin' || user.role === 'super_admin') && <Link to="/admin"><Icon name="category" /> Painel administrativo</Link>}

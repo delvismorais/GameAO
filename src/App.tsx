@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
 import { SettingsProvider } from './context/SettingsContext';
 import { StoreProvider } from './context/StoreContext';
 import { ToastProvider } from './context/ToastContext';
@@ -15,6 +16,7 @@ import { Wishlist } from './pages/Wishlist';
 import { Compare } from './pages/Compare';
 import { Account } from './pages/Account';
 import { AccountOrders } from './pages/AccountOrders';
+import { Affiliate } from './pages/Affiliate';
 import { News } from './pages/News';
 import { BlogPost } from './pages/BlogPost';
 import { About } from './pages/About';
@@ -23,8 +25,10 @@ import { Faq } from './pages/Faq';
 import { Admin } from './pages/Admin';
 import { OrderTracking } from './pages/OrderTracking';
 import { NotFound } from './pages/NotFound';
+import { captureAffiliateCodeFromUrl } from './lib/affiliate';
 
 export default function App() {
+  useEffect(() => { captureAffiliateCodeFromUrl(); }, []);
   return (
     <SettingsProvider>
       <StoreProvider>
@@ -44,6 +48,7 @@ export default function App() {
                 <Route path="/compare" element={<Compare />} />
                 <Route path="/my-account" element={<Account />} />
                 <Route path="/my-account/orders" element={<AccountOrders />} />
+                <Route path="/my-account/affiliate" element={<Affiliate />} />
                 <Route path="/category/news" element={<News />} />
                 <Route path="/blog/:slug" element={<BlogPost />} />
                 <Route path="/about-us" element={<About />} />

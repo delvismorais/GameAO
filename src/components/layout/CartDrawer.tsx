@@ -84,7 +84,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
               <span>Total</span>
               <strong>{formatUsdAsAoa(cartSubtotalUsd - cartDiscountUsd, rate)}</strong>
             </div>
-            <p className="cart-drawer__note">Taxa aplicada: 1 USD = {formatAoa(rate)}</p>
+            <p className="cart-drawer__note">Preços apresentados diretamente; sem conversão adicional.</p>
             <div className="cart-drawer__buttons">
               <Link to="/cart" className="btn btn--outline" onClick={onClose}>Ver Carrinho</Link>
               <Link to="/checkout" className="btn btn--primary" onClick={onClose}>Finalizar Compra</Link>

@@ -1,8 +1,17 @@
+import { useEffect, useState } from 'react';
 import { Breadcrumbs } from '../components/ui/Breadcrumbs';
 import { Accordion } from '../components/ui/Accordion';
 import { FAQ_ACCORDION, FAQ_QUICK } from '../data/site';
 
 export function Faq() {
+  const [managedFaq, setManagedFaq] = useState<Array<{ q: string; a: string }> | null>(null);
+  useEffect(() => {
+    void fetch('/api/site/config').then((response) => response.ok ? response.json() : null).then((data: { faq?: Array<{ question?: string; answer?: string }> } | null) => {
+      const items = (data?.faq ?? []).filter((item) => item.question?.trim() && item.answer?.trim()).map((item) => ({ q: item.question!.trim(), a: item.answer!.trim() }));
+      if (items.length) setManagedFaq(items);
+    }).catch(() => undefined);
+  }, []);
+  const accordion = managedFaq ?? FAQ_ACCORDION;
   return (
     <div className="static-page faq-page">
       <div className="container">
@@ -22,12 +31,12 @@ export function Faq() {
         </div>
 
         <section className="faq-accordion">
-          <h2 className="section-heading__title">Segunda versão das Perguntas Frequentes</h2>
+          <h2 className="section-heading__title">Dúvidas frequentes</h2>
           <p className="faq-accordion__intro">
             Clique numa pergunta para ver a resposta. As informações são geridas pela equipa
             GameAO e podem ser atualizadas nas configurações de conteúdo.
           </p>
-          <Accordion items={FAQ_ACCORDION} />
+          <Accordion items={accordion} />
         </section>
 
         <div className="faq-note">

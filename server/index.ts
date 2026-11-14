@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
@@ -10,8 +10,19 @@ import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
 import { createInvoicePdf, type InvoiceTemplate } from './invoices';
-import { notifyOrderStatusChanged, type OrderStatus } from './notifications';
+import {
+  notifyLowStock,
+  notifyOrderCreated,
+  notifyOrderStatusChanged,
+  notifyPaymentProofSubmitted,
+  notifyPaymentReview,
+  notifyUserWelcome,
+  type OrderStatus,
+} from './notifications';
 import { getPrivateObjectUrl, isStorageConfigured, publicObjectUrl, putPrivateObject } from './storage';
+import { registerCommunicationRoutes } from './routes/communication';
+import { registerAdminModuleRoutes } from './routes/admin-modules';
+import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } from './affiliates';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -79,6 +90,10 @@ async function recordAudit(userId: number, action: string, entityType: string, e
   );
 }
 
+const routeDeps = { requireDatabase, requireAdmin, recordAudit };
+registerCommunicationRoutes(app, routeDeps);
+registerAdminModuleRoutes(app, routeDeps);
+
 function parseArrayValue(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   const raw = String(value ?? '').trim();
@@ -139,6 +154,11 @@ async function readCatalogProducts(includeInactive = false) {
     additionalImages: parseArrayValue(row.additional_images_json),
     videoUrl: row.video_url ?? undefined,
     isDynamic: Boolean(row.is_dynamic),
+    stockQuantity: row.stock_quantity === null || row.stock_quantity === undefined ? null : Number(row.stock_quantity),
+    lowStockThreshold: Number(row.low_stock_threshold ?? 5),
+    relatedProducts: parseArrayValue(row.related_products_json),
+    seoTitle: row.seo_title ?? undefined,
+    seoDescription: row.seo_description ?? undefined,
     variants: variantsByProduct.get(String(row.id)) ?? [],
   }));
 }
@@ -166,6 +186,9 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
   try {
     const user = await registerUser({ email, password, name, phone });
     await createSession(user.id, request, response);
+    const referralCode = String(request.body?.ref ?? request.body?.affiliateCode ?? '').trim();
+    if (referralCode) await attributeAffiliate(user.id, referralCode);
+    void notifyUserWelcome({ id: user.id, name: user.name, email: user.email, phone: user.phone }).catch((error) => console.error('[notifications] boas-vindas', error));
     response.status(201).json({ user });
   } catch (error) {
     if (typeof error === 'object' && error && 'code' in error && (error.code === 'ER_DUP_ENTRY' || error.code === '23505')) {
@@ -189,6 +212,7 @@ app.post('/api/auth/login', asyncRoute(async (request, response) => {
     return;
   }
   await createSession(user.id, request, response);
+  await getPool().execute(`UPDATE app_users SET last_login_at = NOW() WHERE id = ?`, [user.id]);
   response.json({ user });
 }));
 
@@ -199,10 +223,9 @@ app.post('/api/auth/logout', asyncRoute(async (request, response) => {
 }));
 
 app.post('/api/auth/password-reset', asyncRoute(async (_request, response) => {
-  if (!requireDatabase(response)) return;
-  response.status(503).json({
-    error: 'email_not_configured',
-    message: 'A recuperação de palavra-passe ficará disponível depois de configurar o serviço de email no painel administrativo.',
+  response.status(410).json({
+    error: 'use_forgot_password',
+    message: 'Use o novo fluxo de recuperação em /api/auth/forgot-password.',
   });
 }));
 
@@ -303,6 +326,17 @@ async function findOrder(orderNumber: string) {
 
 function chooseInvoiceTemplate(value: unknown): InvoiceTemplate { return value === 'modern' ? 'modern' : 'classic'; }
 
+async function canAccessOrder(request: Request, order: any): Promise<boolean> {
+  const user = await getAuthenticatedUser(request);
+  if (isAdmin(user)) return true;
+  if (user && order.user_id && Number(order.user_id) === user.id) return true;
+  const token = String(request.query.token ?? request.body?.token ?? '');
+  if (token && order.tracking_token && token === String(order.tracking_token)) return true;
+  const email = String(request.query.email ?? request.body?.email ?? '').trim().toLowerCase();
+  if (email && String(order.customer_email).toLowerCase() === email) return true;
+  return false;
+}
+
 app.get('/api/payment-methods', asyncRoute(async (_request, response) => {
   if (!requireDatabase(response)) return;
   const [rows] = await getPool().query<any[]>(`SELECT id, code, name, description, logo_url, receiving_data_json, instructions, requires_proof, payment_deadline_hours, customer_message FROM payment_methods WHERE is_active = 1 ORDER BY sort_order ASC, name ASC`);
@@ -336,6 +370,7 @@ app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRou
   const file = request.file;
   const found = await findOrder(String(request.params.orderNumber).trim().toUpperCase());
   if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
+  if (!await canAccessOrder(request, found.order)) { response.status(403).json({ error: 'email_verification_required', message: 'Indique o email da encomenda ou use o link seguro enviado por email.' }); return; }
   if (!file) { response.status(400).json({ error: 'file_required', message: 'Selecione um comprovativo.' }); return; }
   const requestedPaymentCode = String(request.body?.paymentMethod ?? '').trim();
   let paymentMethodId = found.order.payment_method_id ?? null;
@@ -353,10 +388,10 @@ app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRou
   const key = `payment-proofs/${found.order.order_number}/${randomUUID()}${extension === '.jpeg' ? '.jpg' : extension}`;
   await putPrivateObject(key, file.buffer, file.mimetype);
   await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?, 'submitted')`, [found.order.id, paymentMethodId, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size]);
-  await getPool().execute(`UPDATE shop_orders SET payment_method = ?, payment_method_id = ?, payment_status = 'paid', status = 'payment_confirmed' WHERE id = ?`, [paymentMethodCode, paymentMethodId, found.order.id]);
-  await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, 'payment_confirmed', 'Comprovativo enviado pelo cliente.', NULL)`, [found.order.id, found.order.status]);
-  await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, 'payment_confirmed');
-  response.status(201).json({ ok: true, status: 'paid', message: 'Comprovativo recebido. O pedido foi marcado como pago e ficará disponível para processamento.' });
+  await getPool().execute(`UPDATE shop_orders SET payment_method = ?, payment_method_id = ?, status = 'payment_verification' WHERE id = ?`, [paymentMethodCode, paymentMethodId, found.order.id]);
+  await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, 'payment_verification', 'Comprovativo enviado pelo cliente; aguarda revisão da GameAO.', NULL)`, [found.order.id, found.order.status]);
+  await notifyPaymentProofSubmitted({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone, total_aoa: found.order.total_aoa, status: 'payment_verification', payment_method: paymentMethodCode, user_id: found.order.user_id });
+  response.status(201).json({ ok: true, status: 'payment_verification', message: 'Comprovativo recebido. A equipa GameAO vai rever o documento antes de confirmar o pagamento.' });
 }));
 
 app.get('/api/admin/payment-proofs', asyncRoute(async (request, response) => {
@@ -390,11 +425,13 @@ app.patch('/api/admin/payment-proofs/:id/review', asyncRoute(async (request, res
   if (!nextProofStatus) { response.status(400).json({ error: 'invalid_review', message: 'Ação de revisão inválida.' }); return; }
   const [[proof]] = await getPool().query<any[]>(`SELECT id, order_id FROM payment_proofs WHERE id = ? LIMIT 1`, [Number(request.params.id)]);
   if (!proof) { response.status(404).json({ error: 'proof_not_found', message: 'Comprovativo não encontrado.' }); return; }
-  const [[order]] = await getPool().query<any[]>(`SELECT order_number, payment_status, status FROM shop_orders WHERE id = ? LIMIT 1`, [proof.order_id]);
+  const [[order]] = await getPool().query<any[]>(`SELECT id, order_number, payment_status, status, customer_name, customer_email, customer_phone, total_aoa, payment_method, user_id FROM shop_orders WHERE id = ? LIMIT 1`, [proof.order_id]);
   if (!order) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
   await getPool().execute(`UPDATE payment_proofs SET status = ?, admin_note = ?, reviewed_at = NOW(), reviewed_by_user_id = ? WHERE id = ?`, [nextProofStatus, note, admin.id, proof.id]);
   if (action === 'approve') await getPool().execute(`UPDATE shop_orders SET payment_status = 'paid', status = 'payment_confirmed' WHERE id = ?`, [proof.order_id]);
   if (action === 'reject' || action === 'request_new') await getPool().execute(`UPDATE shop_orders SET payment_status = 'pending', status = 'awaiting_payment' WHERE id = ? AND payment_status <> 'paid'`, [proof.order_id]);
+  await notifyPaymentReview({ id: Number(order.id), order_number: order.order_number, customer_name: order.customer_name, customer_email: order.customer_email, customer_phone: order.customer_phone, total_aoa: order.total_aoa, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment', payment_method: order.payment_method, user_id: order.user_id }, action as 'approve' | 'reject' | 'request_new', note);
+  if (action === 'approve') await settleAffiliateCommission(Number(order.id));
   await recordAudit(admin.id, `payment_proof.${action}`, 'payment_proof', String(proof.id), { orderNumber: order.order_number, note });
   response.json({ ok: true, proofStatus: nextProofStatus, orderNumber: order.order_number });
 }));
@@ -411,7 +448,7 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
   const paymentMethodCode = typeof body.paymentMethod === 'string' ? body.paymentMethod.trim() : '';
   let paymentMethod: any = null;
   if (paymentMethodCode) {
-    const [[selectedMethod]] = await getPool().query<any[]>(`SELECT id, code, name, requires_proof FROM payment_methods WHERE code = ? AND is_active = 1 LIMIT 1`, [paymentMethodCode]);
+    const [[selectedMethod]] = await getPool().query<any[]>(`SELECT id, code, name, requires_proof, instructions, customer_message FROM payment_methods WHERE code = ? AND is_active = 1 LIMIT 1`, [paymentMethodCode]);
     if (!selectedMethod) { response.status(400).json({ error: 'invalid_payment_method', message: 'O método de pagamento selecionado não está disponível.' }); return; }
     paymentMethod = selectedMethod;
   }
@@ -445,18 +482,55 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
     const shipping = items.reduce((sum, item) => sum + item.shipping, 0);
+    let discount = 0;
+    let coupon: any = null;
+    const couponCode = String(body.couponCode ?? '').trim().toUpperCase();
+    if (couponCode) {
+      const [[couponRow]] = await connection.query<any[]>(`SELECT * FROM coupons WHERE code = ? AND is_active = 1 AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) LIMIT 1`, [couponCode]);
+      if (!couponRow) { await connection.rollback(); response.status(400).json({ error: 'invalid_coupon', message: 'O cupão indicado não é válido ou já expirou.' }); return; }
+      if (couponRow.usage_limit !== null && Number(couponRow.used_count) >= Number(couponRow.usage_limit)) { await connection.rollback(); response.status(400).json({ error: 'coupon_exhausted', message: 'Este cupão já atingiu o limite de utilizações.' }); return; }
+      if (subtotal < Number(couponRow.min_order_aoa)) { await connection.rollback(); response.status(400).json({ error: 'coupon_min_order', message: `Este cupão exige um subtotal mínimo configurado.` }); return; }
+      discount = couponRow.discount_type === 'percent' ? subtotal * Number(couponRow.discount_value) / 100 : Number(couponRow.discount_value);
+      if (couponRow.max_discount_aoa !== null && couponRow.max_discount_aoa !== undefined) discount = Math.min(discount, Number(couponRow.max_discount_aoa));
+      discount = Math.round(Math.min(discount, subtotal) * 100) / 100;
+      coupon = couponRow;
+    }
     const hasPhysical = items.some((item) => item.categoryType === 'physical');
     if (hasPhysical && (!String(body.deliveryAddress ?? customer.address).trim() || !String(customer.city ?? '').trim() || !String(customer.province ?? '').trim())) { await connection.rollback(); response.status(400).json({ error: 'delivery_address_required', message: 'Produtos físicos exigem um endereço de entrega completo.' }); return; }
     const deliveryDate = body.deliveryDate ? String(body.deliveryDate).slice(0, 10) : null;
-    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, String(body.deliveryAddress ?? customer.address).trim(), deliveryDate, subtotal, shipping, subtotal + shipping, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null]);
+    const trackingToken = randomBytes(24).toString('hex');
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, trackingToken, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, String(body.deliveryAddress ?? customer.address).trim(), deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
     const orderId = Number(Array.isArray(insert) ? insert[0]?.id : insert?.insertId);
     if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('A base de dados não devolveu o identificador da encomenda.');
     const orderNumber = `GA${orderId}`;
     await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);
+    if (coupon) {
+      await connection.execute(`UPDATE coupons SET used_count = used_count + 1, updated_at = NOW() WHERE id = ?`, [coupon.id]);
+      await connection.execute(`INSERT INTO coupon_redemptions (coupon_id, order_id, user_id, discount_aoa) VALUES (?, ?, ?, ?) ON CONFLICT (coupon_id, order_id) DO NOTHING`, [coupon.id, orderId, user?.id ?? null, discount]);
+    }
     for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, variant_id, variant_name, unit_price_aoa, quantity, subtotal_aoa, player_id, player_nickname, category_type, product_subtype, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.variantId, item.variantName, item.unit * rate, item.qty, item.subtotal, item.playerId, item.playerNickname, item.categoryType, item.productSubtype, item.image]);
     await connection.execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, NULL, 'awaiting_payment', 'Encomenda criada no checkout.', ?)`, [orderId, user?.id ?? null]);
     await connection.commit();
-    response.status(201).json({ orderNumber, totalAoa: subtotal + shipping, subtotalAoa: subtotal, shippingAoa: shipping, invoiceTemplates: ['classic', 'modern'] });
+    const referralCode = String(body.affiliateCode ?? body.ref ?? '').trim();
+    let affiliate = referralCode ? await findAffiliateByCode(referralCode) : null;
+    if (!affiliate && user?.id) {
+      const [[referred]] = await getPool().query<any[]>(`SELECT a.id, a.code FROM affiliates a JOIN app_users u ON u.referred_by_affiliate_id = a.id WHERE u.id = ? AND a.status = 'active' LIMIT 1`, [user.id]);
+      if (referred) affiliate = { id: Number(referred.id), code: String(referred.code), user_id: 0, commission_rate: 0, status: 'active' };
+    }
+    if (affiliate) await getPool().execute(`UPDATE shop_orders SET affiliate_id = ?, affiliate_code = ? WHERE id = ?`, [affiliate.id, affiliate.code, orderId]);
+    for (const item of items) {
+      const [[stockRow]] = await getPool().query<any[]>(`SELECT stock_quantity, low_stock_threshold, name FROM catalog_products WHERE id = ? LIMIT 1`, [item.id]);
+      if (stockRow && stockRow.stock_quantity !== null && stockRow.stock_quantity !== undefined) {
+        const remaining = Math.max(0, Number(stockRow.stock_quantity) - item.qty);
+        await getPool().execute(`UPDATE catalog_products SET stock_quantity = ? WHERE id = ?`, [remaining, item.id]);
+        if (remaining <= Number(stockRow.low_stock_threshold ?? 5)) void notifyLowStock({ id: item.id, name: String(stockRow.name), stock_quantity: remaining }).catch((error) => console.error('[notifications] stock', error));
+      }
+    }
+    void notifyOrderCreated(
+      { id: orderId, order_number: orderNumber, tracking_token: trackingToken, customer_name: `${customer.firstName} ${customer.lastName}`.trim(), customer_email: customer.email.trim().toLowerCase(), customer_phone: customer.phone.trim(), total_aoa: subtotal + shipping - discount, status: 'awaiting_payment', payment_method: paymentMethod?.name ?? null, user_id: user?.id ?? null, items: items.map((item) => ({ product_name: item.name, quantity: item.qty, subtotal_aoa: item.subtotal })) },
+      paymentMethod?.instructions ?? paymentMethod?.customer_message ?? '',
+    ).catch((error) => console.error('[notifications] encomenda criada', error));
+    response.status(201).json({ orderNumber, trackingToken, email: customer.email.trim().toLowerCase(), totalAoa: subtotal + shipping - discount, subtotalAoa: subtotal, shippingAoa: shipping, discountAoa: discount, couponCode: coupon?.code ?? null, invoiceTemplates: ['classic', 'modern'] });
   } catch (error) {
     await connection.rollback();
     console.error('[orders] falha ao criar encomenda', error instanceof Error ? error.message : error);
@@ -468,7 +542,17 @@ app.get('/api/orders/:orderNumber', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const found = await findOrder(String(request.params.orderNumber));
   if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
-  response.json({ order: { order_number: found.order.order_number, customer_name: found.order.customer_name, total_aoa: found.order.total_aoa, subtotal_aoa: found.order.subtotal_aoa, shipping_aoa: found.order.shipping_aoa, status: found.order.status, payment_status: found.order.payment_status, payment_method: found.order.payment_method, created_at: found.order.created_at, updated_at: found.order.updated_at, delivery_city: found.order.billing_city, delivery_province: found.order.billing_province }, items: found.items.map((item: any) => ({ product_name: item.product_name, quantity: item.quantity, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url })), history: found.history });
+  if (!await canAccessOrder(request, found.order)) {
+    response.status(403).json({ error: 'email_verification_required', message: 'Indique o email usado na encomenda ou abra o link seguro enviado por email.' });
+    return;
+  }
+  response.json({
+    order: { order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, total_aoa: found.order.total_aoa, subtotal_aoa: found.order.subtotal_aoa, exchange_rate_usd_aoa: found.order.exchange_rate_usd_aoa, shipping_aoa: found.order.shipping_aoa, discount_aoa: found.order.discount_aoa, coupon_code: found.order.coupon_code, status: found.order.status, payment_status: found.order.payment_status, payment_method: found.order.payment_method, payment_reference: found.order.payment_reference, created_at: found.order.created_at, updated_at: found.order.updated_at, delivery_city: found.order.billing_city, delivery_province: found.order.billing_province },
+    items: found.items.map((item: any) => ({ product_name: item.product_name, variant_name: item.variant_name, quantity: item.quantity, unit_price_aoa: item.unit_price_aoa, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url, player_id: item.player_id })),
+    paymentMethod: found.paymentMethod,
+    proofs: found.proofs,
+    history: found.history,
+  });
 }));
 
 async function deliverInvoice(request: Request, response: Response, adminOnly: boolean): Promise<void> {
@@ -477,6 +561,10 @@ async function deliverInvoice(request: Request, response: Response, adminOnly: b
   if (adminOnly && !admin) return;
   const found = await findOrder(String(request.params.orderNumber));
   if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
+  if (!adminOnly && !await canAccessOrder(request, found.order)) {
+    response.status(403).json({ error: 'email_verification_required', message: 'Indique o email da encomenda ou use o link seguro enviado por email para descarregar a fatura.' });
+    return;
+  }
   const template = chooseInvoiceTemplate(request.query.template);
   const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
   await getPool().execute(`INSERT INTO invoice_downloads (order_id, template, downloaded_by_user_id) VALUES (?, ?, ?)`, [found.order.id, template, admin?.id ?? null]);
@@ -504,7 +592,7 @@ app.put('/api/admin/settings/exchange-rate', asyncRoute(async (request, response
   if (!user) return;
   const usdToAoa = Number(request.body?.usdToAoa);
   if (!Number.isFinite(usdToAoa) || usdToAoa <= 0) {
-    response.status(400).json({ error: 'invalid_exchange_rate', message: 'Indique uma taxa USD/AOA superior a zero.' });
+    response.status(400).json({ error: 'invalid_exchange_rate', message: 'A configuração monetária indicada é inválida.' });
     return;
   }
   const config = { usdToAoa, source: String(request.body?.source ?? 'Configuração administrativa').trim(), updatedAt: new Date().toISOString().slice(0, 10), note: String(request.body?.note ?? '').trim() };
@@ -537,7 +625,7 @@ app.get('/api/admin/orders', asyncRoute(async (request, response) => {
   response.json({ orders });
 }));
 
-const ORDER_STATUSES: OrderStatus[] = ['awaiting_payment', 'payment_confirmed', 'processing', 'ready_for_delivery', 'completed', 'cancelled', 'refunded'];
+const ORDER_STATUSES: OrderStatus[] = ['awaiting_payment', 'payment_verification', 'payment_confirmed', 'processing', 'ready_for_delivery', 'completed', 'cancelled', 'refunded'];
 
 app.patch('/api/admin/orders/:orderNumber/status', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
@@ -552,6 +640,7 @@ app.patch('/api/admin/orders/:orderNumber/status', asyncRoute(async (request, re
   await getPool().execute(`UPDATE shop_orders SET status = ? WHERE id = ?`, [nextStatus, found.order.id]);
   await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, ?, ?, ?)`, [found.order.id, previousStatus, nextStatus, request.body?.note ?? null, admin.id]);
   const notifications = await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, nextStatus);
+  if (['payment_confirmed', 'processing', 'ready_for_delivery', 'completed'].includes(nextStatus)) await settleAffiliateCommission(Number(found.order.id));
   await recordAudit(admin.id, 'order.status_changed', 'shop_order', String(found.order.id), { from: previousStatus, to: nextStatus, notifications });
   response.json({ orderNumber: found.order.order_number, status: nextStatus, notifications });
 }));
@@ -600,8 +689,8 @@ app.post('/api/admin/products', asyncRoute(async (request, response) => {
     [id, slug, name, basePriceUsd, body.salePriceUsd == null || body.salePriceUsd === '' ? null : Number(body.salePriceUsd), JSON.stringify(Array.isArray(body.tags) ? body.tags : []), body.image, body.imageCard, body.hot ? 1 : 0, Number(body.shopOrder ?? 999), body.shortDescription ?? '', JSON.stringify(Array.isArray(body.description) ? body.description : []), Number(body.releaseYear ?? new Date().getFullYear()), body.developer ?? '', body.platform ?? ''],
   );
   await getPool().execute(
-    `UPDATE catalog_products SET category_type = ?, product_subtype = ?, requires_player_id = ?, sub_category = ?, shipping_cost_aoa = ?, additional_images_json = ?, video_url = ?, is_dynamic = ? WHERE id = ?`,
-    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.requiresPlayerId ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, id],
+    `UPDATE catalog_products SET category_type = ?, product_subtype = ?, requires_player_id = ?, sub_category = ?, shipping_cost_aoa = ?, additional_images_json = ?, video_url = ?, is_dynamic = ?, stock_quantity = ?, low_stock_threshold = ?, related_products_json = ?, seo_title = ?, seo_description = ? WHERE id = ?`,
+    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.requiresPlayerId ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, body.stockQuantity == null || body.stockQuantity === '' ? null : Math.max(0, Number(body.stockQuantity)), Math.max(0, Number(body.lowStockThreshold ?? 5)), JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : []), typeof body.seoTitle === 'string' ? body.seoTitle.trim() || null : null, typeof body.seoDescription === 'string' ? body.seoDescription.trim() || null : null, id],
   );
   await recordAudit(user.id, 'create', 'product', id, { name, slug });
   response.status(201).json({ product: (await readCatalogProducts(true)).find((product) => product.id === id) });
@@ -614,13 +703,14 @@ app.put('/api/admin/products/:id', asyncRoute(async (request, response) => {
   const body = request.body ?? {};
   const id = String(request.params.id);
   const fields: Array<[string, string | number | null]> = [];
-  const allowed: Record<string, string> = { name: 'name', slug: 'slug', basePriceUsd: 'base_price_usd', salePriceUsd: 'sale_price_usd', image: 'image_url', imageCard: 'image_card_url', shortDescription: 'short_description', releaseYear: 'release_year', developer: 'developer', platform: 'platform', hot: 'is_hot', shopOrder: 'shop_order', isActive: 'is_active', categoryType: 'category_type', productSubtype: 'product_subtype', requiresPlayerId: 'requires_player_id', subCategory: 'sub_category', shippingCostAoa: 'shipping_cost_aoa', videoUrl: 'video_url', isDynamic: 'is_dynamic' };
+  const allowed: Record<string, string> = { name: 'name', slug: 'slug', basePriceUsd: 'base_price_usd', salePriceUsd: 'sale_price_usd', image: 'image_url', imageCard: 'image_card_url', shortDescription: 'short_description', releaseYear: 'release_year', developer: 'developer', platform: 'platform', hot: 'is_hot', shopOrder: 'shop_order', isActive: 'is_active', categoryType: 'category_type', productSubtype: 'product_subtype', requiresPlayerId: 'requires_player_id', subCategory: 'sub_category', shippingCostAoa: 'shipping_cost_aoa', videoUrl: 'video_url', isDynamic: 'is_dynamic', stockQuantity: 'stock_quantity', lowStockThreshold: 'low_stock_threshold', seoTitle: 'seo_title', seoDescription: 'seo_description' };
   for (const [input, column] of Object.entries(allowed)) {
     if (input in body) fields.push([column, ['hot', 'isActive', 'requiresPlayerId', 'isDynamic'].includes(input) ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
   }
   if ('tags' in body) fields.push(['tags_json', JSON.stringify(Array.isArray(body.tags) ? body.tags : [])]);
   if ('description' in body) fields.push(['description_json', JSON.stringify(Array.isArray(body.description) ? body.description : [])]);
   if ('additionalImages' in body) fields.push(['additional_images_json', JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : [])]);
+  if ('relatedProducts' in body) fields.push(['related_products_json', JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : [])]);
   if (fields.length === 0) {
     response.status(400).json({ error: 'empty_update', message: 'Nenhum campo foi alterado.' });
     return;

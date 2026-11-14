@@ -60,7 +60,7 @@ export function AccountOrders() {
               </div>
               <footer className="order-card__foot">
                 <span>Total: <strong>{formatUsdAsAoa(order.totalAoa / order.exchangeRate, order.exchangeRate)}</strong></span>
-                <span>Taxa: 1 USD = {formatUsdAsAoa(1, order.exchangeRate)}</span>
+               
                 <Link to={`/pedido?order=${encodeURIComponent(order.id)}`} className="btn btn--outline btn--sm">Ver detalhes</Link>
               </footer>
             </article>

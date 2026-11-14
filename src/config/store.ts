@@ -1,19 +1,18 @@
 /**
  * Configuração central da loja.
  *
- * A taxa USD/AOA NÃO deve ser escrita diretamente nos componentes.
- * Este é o único valor por omissão; a taxa efetiva é gerida pelo
- * SettingsContext e pode ser alterada apenas no painel administrativo.
+ * Os preços públicos são apresentados diretamente. Os campos de compatibilidade
+ * abaixo permanecem apenas para não quebrar dados históricos já guardados.
  */
 
 export interface ExchangeRateConfig {
-  /** Quantos kwanzas vale 1 dólar americano. */
+  /** Legacy compatibility value for historical records. */
   usdToAoa: number;
-  /** Entidade/fonte da taxa. */
+  /** Legacy compatibility metadata. */
   source: string;
-  /** Data de referência da taxa (ISO: AAAA-MM-DD). */
+  /** Legacy compatibility metadata. */
   updatedAt: string;
-  /** Nota visível na página de configurações. */
+  /** Legacy compatibility metadata. */
   note: string;
 }
 
@@ -39,9 +38,9 @@ export const STORAGE_KEYS = {
 export const STORE_INFO = {
   name: 'GameAO',
   tagline: 'A sua loja de videojogos em Angola.',
-  currency: 'AOA',
-  currencySymbol: 'Kz',
-  locale: 'pt-AO',
+  currency: 'USD',
+  currencySymbol: '$',
+  locale: 'en-US',
   country: 'Angola',
   managementNote:
     'Conteúdos geridos pelo painel administrativo. Os dados da loja, contactos e artigos podem ser atualizados sem alterar o código.',

@@ -115,7 +115,7 @@ export function Cart() {
                 <strong>{formatUsdAsAoa(totalUsd, rate)}</strong>
               </div>
               <p className="cart-totals__rate">
-                Taxa aplicada: 1 USD = {formatUsdAsAoa(rate, 1)}.
+                Preços apresentados diretamente na moeda da loja.
                 <br />
                 A taxa aplicada é gerida internamente pela loja.
               </p>
@@ -127,8 +127,7 @@ export function Cart() {
           <div className="cart-bottom-note">
             <Icon name="cart" />
             <p>
-              Os totais são recalculados automaticamente com a taxa USD/AOA configurada
-              ({formatUsdAsAoa(rate, 1)} por 1 USD). Os valores da encomenda ficam registados com a
+              Os totais são recalculados automaticamente. Os valores da encomenda ficam registados com a
               taxa usada no momento da confirmação.
             </p>
           </div>

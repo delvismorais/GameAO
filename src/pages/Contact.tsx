@@ -9,15 +9,23 @@ export function Contact() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [sent, setSent] = useState(false);
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim());
     if (!form.name.trim() || !emailValid || form.subject.trim().length < 3 || form.message.trim().length < 10) {
       showToast('Preencha o nome, um email válido, o assunto e uma mensagem com pelo menos 10 caracteres.', 'error');
       return;
     }
-    setSent(true);
-    showToast('O formulário foi validado, mas o serviço de atendimento ainda não está configurado.', 'info');
+    try {
+      const response = await fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(data?.message || 'Não foi possível enviar a mensagem.');
+      setSent(true);
+      setForm({ name: '', email: '', subject: '', message: '' });
+      showToast(data?.message || 'Mensagem enviada.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Não foi possível enviar a mensagem.', 'error');
+    }
   };
 
   return (
@@ -59,8 +67,7 @@ export function Contact() {
             <h2>Envie-nos uma mensagem</h2>
             {sent && (
               <div className="form-success">
-                O formulário foi validado. A mensagem ainda não foi enviada porque o serviço de
-                atendimento não está configurado.
+                A sua mensagem foi recebida pela equipa GameAO. Responderemos assim que possível.
               </div>
             )}
             <label className="field">

@@ -216,7 +216,7 @@ export const TEAM = [
 export const ABOUT_BLOCKS = [
   {
     title: 'O que fazemos',
-    text: 'Selecionamos videojogos para PC, Xbox e PlayStation, com preços em kwanzas e apoio em português. Cada título é escolhido pela qualidade e pela procura da comunidade angolana.',
+    text: 'Selecionamos videojogos para PC, Xbox e PlayStation, com apoio em português. Cada título é escolhido pela qualidade e pela procura da comunidade angolana.',
     image: '/assets/about/block-1.jpg',
   },
   {

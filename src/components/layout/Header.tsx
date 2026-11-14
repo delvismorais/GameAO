@@ -4,6 +4,7 @@ import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { Icon } from '../ui/Icon';
 import { SOCIALS } from '../../data/site';
+import { NotificationBell } from './NotificationBell';
 
 interface HeaderProps {
   onOpenCart: () => void;
@@ -15,6 +16,7 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
   const { cartCount, wishlist, user } = useStore();
   const { showToast } = useToast();
   const [scrolled, setScrolled] = useState(false);
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const location = useLocation();
 
   useEffect(() => {
@@ -27,6 +29,14 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
   useEffect(() => {
     setScrolled(window.scrollY > 12);
   }, [location.pathname]);
+
+  useEffect(() => {
+    void fetch('/api/site/config').then((response) => response.ok ? response.json() : null).then((data: { socials?: Array<{ label?: string; url?: string; href?: string }> } | null) => {
+      const next: Record<string, string> = {};
+      for (const item of data?.socials ?? []) if (item.label && (item.url || item.href)) next[item.label.toLowerCase()] = item.url || item.href || '';
+      setSocialLinks(next);
+    }).catch(() => undefined);
+  }, []);
 
   return (
     <header className={`site-header ${scrolled ? 'is-scrolled' : ''}`.trim()}>
@@ -79,7 +89,7 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
                 <button
                   key={social.label}
                   type="button"
-                  onClick={() => showToast('As redes sociais serão configuradas na fase seguinte.', 'info')}
+                  onClick={() => { const href = socialLinks[social.label.toLowerCase()]; if (href) window.open(href, '_blank', 'noopener,noreferrer'); else showToast('Esta rede social ainda não foi configurada.', 'info'); }}
                   aria-label={social.label}
                 >
                   <Icon name={social.icon} />
@@ -91,6 +101,7 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
             <Icon name="user" />
             <span>{user ? user.name.split(' ')[0] : 'Minha Conta'}</span>
           </Link>
+          {user && <NotificationBell endpoint="/api/account/notifications?limit=8" markAllEndpoint="/api/account/notifications/read-all" markOneEndpoint={(id) => `/api/account/notifications/${id}/read`} viewAllHref="/my-account" compact />}
           <Link to="/wishlist" className="tool tool--badge" aria-label={`Lista de desejos (${wishlist.length})`}>
             <span className="tool__count">{wishlist.length}</span>
             <Icon name="heart" />

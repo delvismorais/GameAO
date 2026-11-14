@@ -18,7 +18,7 @@ export function Footer() {
             <img src="/assets/gameao-logo.png" alt="GameAO" />
           </Link>
           <p>
-            {STORE_INFO.tagline} com preços em kwanzas e conteúdos em português de Angola.
+            {STORE_INFO.tagline} com conteúdos em português de Angola.
           </p>
           <ul className="footer-contact">
             <li>{CONTACT_INFO.email}</li>
