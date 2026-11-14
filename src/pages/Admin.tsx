@@ -16,6 +16,7 @@ type AdminOrder = { order_number: string; customer_name: string; customer_email:
 type PaymentMethod = { id: number; code: string; name: string; description: string; instructions: string; is_active: number; requires_proof: number; payment_deadline_hours: number; customer_message: string; receiving_data_json?: unknown };
 type PaymentProof = { id: number; order_number: string; customer_name: string; customer_email: string; total_aoa: number; payment_method_name?: string; original_name: string; mime_type: string; size_bytes: number; status: string; admin_note?: string; submitted_at: string; payment_status: string };
 type AdminTab = 'dashboard' | 'orders' | 'products' | 'payments' | 'proofs' | 'settings';
+type AdminNavItem = { id: AdminTab; label: string; icon: 'category' | 'cart' | 'clock' | 'user' };
 
 const ORDER_STATUS_OPTIONS = [
   ['awaiting_payment', 'A aguardar pagamento'], ['payment_verification', 'Comprovativo em verificação'], ['payment_confirmed', 'Pagamento confirmado'], ['processing', 'Em processamento'],
@@ -33,6 +34,9 @@ export function Admin() {
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [message, setMessage] = useState('');
+  const [menuSearch, setMenuSearch] = useState('');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [rateDraft, setRateDraft] = useState(String(rate));
   const [rateSource, setRateSource] = useState(config.source);
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -92,13 +96,19 @@ export function Admin() {
 
   if (forbidden) return <PageShell crumbs={[{ label: 'Administração' }]}><div className="admin-empty"><h1 className="page-title">Administração</h1><p>Esta área requer uma conta administrativa autorizada.</p><Link to="/my-account" className="btn btn--primary">Iniciar sessão</Link></div></PageShell>;
 
-  const navItems: Array<{ id: AdminTab; label: string; icon: 'category' | 'cart' | 'clock' }> = [
-    { id: 'dashboard', label: 'Visão geral', icon: 'category' }, { id: 'orders', label: 'Pedidos e faturas', icon: 'cart' }, { id: 'products', label: 'Produtos', icon: 'category' }, { id: 'payments', label: 'Pagamentos', icon: 'cart' }, { id: 'proofs', label: `Comprovativos${proofs.filter((proof) => proof.status === 'submitted').length ? ` (${proofs.filter((proof) => proof.status === 'submitted').length})` : ''}`, icon: 'cart' }, { id: 'settings', label: 'Configuração', icon: 'clock' },
+  const pendingProofs = proofs.filter((proof) => proof.status === 'submitted').length;
+  const navGroups: Array<{ label: string; items: AdminNavItem[] }> = [
+    { label: 'Visão geral', items: [{ id: 'dashboard', label: 'Dashboard', icon: 'category' }] },
+    { label: 'Vendas', items: [{ id: 'orders', label: 'Pedidos e faturas', icon: 'cart' }, { id: 'proofs', label: `Comprovativos${pendingProofs ? ` (${pendingProofs})` : ''}`, icon: 'cart' }, { id: 'payments', label: 'Métodos de pagamento', icon: 'cart' }] },
+    { label: 'Catálogo', items: [{ id: 'products', label: 'Produtos', icon: 'category' }] },
+    { label: 'Configurações', items: [{ id: 'settings', label: 'Taxa e configuração', icon: 'clock' }] },
   ];
+  const visibleNavGroups = navGroups.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLocaleLowerCase().includes(menuSearch.toLocaleLowerCase())) })).filter((group) => group.items.length > 0);
+  const visibleOrders = orders.filter((order) => { const query = orderSearch.trim().toLocaleLowerCase(); return (!query || `${order.order_number} ${order.customer_name} ${order.customer_email}`.toLocaleLowerCase().includes(query)) && (orderStatusFilter === 'all' || order.status === orderStatusFilter); });
   const orderList = (compact = false) => (
     <div className="admin-products-table">
-      {orders.length === 0 && <p className="admin-message">Ainda não existem pedidos registados.</p>}
-      {(compact ? orders.slice(0, 5) : orders).map((order) => (
+      {visibleOrders.length === 0 && <p className="admin-message">Não existem pedidos para os filtros selecionados.</p>}
+      {(compact ? visibleOrders.slice(0, 5) : visibleOrders).map((order) => (
         <article key={order.order_number}>
           <div><strong>{order.order_number}</strong><small>{order.customer_name} · {order.customer_email}</small></div>
           <span>{money.format(Number(order.total_aoa))} Kz</span>
@@ -113,8 +123,10 @@ export function Admin() {
     <div className="admin-head"><div><p className="page-kicker">GameAO · operação</p><h1 className="page-title">Painel administrativo</h1><p className="page-subtitle">Gestão centralizada do catálogo, pedidos, preços e operação da loja.</p></div><Link to="/my-account" className="btn btn--outline btn--sm">Minha conta</Link></div>
     <div className="admin-shell">
       <nav className="admin-nav" aria-label="Menu administrativo">
-        <div className="admin-nav__identity"><img src="/assets/logo.png" alt="GameAO" /><span>Área de gestão</span></div>
-        {navItems.map((item) => <button type="button" key={item.id} className={activeTab === item.id ? 'is-active' : ''} onClick={() => { setActiveTab(item.id); setMessage(''); }}><Icon name={item.icon} />{item.label}</button>)}
+        <div className="admin-nav__identity"><img src="/assets/logo.png" alt="GameAO" /><span>Painel Admin<br />Operação da loja</span></div>
+        <label className="admin-nav__search"><span className="sr-only">Pesquisar menu</span><input value={menuSearch} onChange={(event) => setMenuSearch(event.target.value)} placeholder="Pesquisar menu…" /></label>
+        {visibleNavGroups.map((group) => <section className="admin-nav__group" key={group.label}><h2>{group.label}</h2>{group.items.map((item) => <button type="button" key={item.id} className={activeTab === item.id ? 'is-active' : ''} onClick={() => { setActiveTab(item.id); setMessage(''); }}><Icon name={item.icon} /><span>{item.label}</span></button>)}</section>)}
+        {visibleNavGroups.length === 0 && <p className="admin-nav__empty">Nenhuma secção encontrada.</p>}
         <div className="admin-nav__bottom"><Link to="/" target="_blank"><Icon name="arrowRight" /> Ver loja</Link><Link to="/my-account"><Icon name="user" /> Perfil</Link></div>
       </nav>
       <main className="admin-main">
@@ -124,7 +136,7 @@ export function Admin() {
             <div className="admin-quick-grid"><button type="button" onClick={() => setActiveTab('orders')}><Icon name="cart" /><strong>Gerir pedidos</strong><span>Atualizar estados e descarregar faturas</span></button><button type="button" onClick={() => setActiveTab('products')}><Icon name="category" /><strong>Gerir produtos</strong><span>Criar, ativar ou desativar produtos</span></button><button type="button" onClick={() => setActiveTab('settings')}><Icon name="clock" /><strong>Configurar loja</strong><span>Alterar a taxa interna de preços</span></button></div>
             <section className="admin-card"><div className="admin-card__head"><h2>Pedidos recentes</h2><button type="button" className="btn btn--outline btn--sm" onClick={() => setActiveTab('orders')}>Ver todos</button></div>{orderList(true)}</section>
           </>}
-          {activeTab === 'orders' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Pedidos e faturas</h2><p className="admin-card__subhead">Altere o estado do pedido e descarregue um dos modelos de fatura.</p></div><span>{orders.length} registos</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}{orderList()}</section>}
+          {activeTab === 'orders' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Pedidos e faturas</h2><p className="admin-card__subhead">Altere o estado do pedido e descarregue um dos modelos de fatura.</p></div><span>{visibleOrders.length} de {orders.length}</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}<div className="admin-toolbar"><input value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="Pesquisar número, cliente ou email…" /><select value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)}><option value="all">Todos os estados</option>{ORDER_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>{orderList()}</section>}
           {activeTab === 'products' && <ProductCatalogManager products={products} rate={rate} onRefresh={load} onMessage={setMessage} />}
           {activeTab === 'payments' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Métodos de pagamento</h2><p className="admin-card__subhead">Configure apenas dados próprios da GameAO. Métodos novos ficam desativados até serem revistos.</p></div><span>{paymentMethods.filter((method) => method.is_active).length} ativos</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}<div className="admin-products-table">{paymentMethods.map((method) => <article key={method.id}><div><strong>{method.name}</strong><small>{method.code} · {method.requires_proof ? 'exige comprovativo' : 'sem comprovativo'}</small></div><label className="admin-order-status"><span>Ativo</span><input type="checkbox" checked={Boolean(method.is_active)} onChange={(event) => void updatePaymentMethod(method, { is_active: event.target.checked ? 1 : 0 })} /></label><button type="button" className="btn btn--outline btn--sm" onClick={() => { const instructions = window.prompt('Instruções de pagamento da GameAO:', method.instructions); if (instructions !== null) void updatePaymentMethod(method, { instructions }); }}>Editar instruções</button></article>)}</div></section>}
           {activeTab === 'proofs' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Comprovativos de pagamento</h2><p className="admin-card__subhead">O envio não confirma o pagamento. Reveja o documento antes de aprovar.</p></div><span>{proofs.filter((proof) => proof.status === 'submitted').length} por rever</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}<div className="admin-products-table">{proofs.length === 0 && <p className="admin-message">Ainda não existem comprovativos.</p>}{proofs.map((proof) => <article key={proof.id}><div><strong>{proof.order_number} · {proof.customer_name}</strong><small>{proof.original_name} · {proof.payment_method_name ?? 'Sem método'} · {new Date(proof.submitted_at).toLocaleString('pt-AO')}</small></div><span>{money.format(Number(proof.total_aoa))} Kz<br /><small>{proof.status}</small></span><button type="button" className="btn btn--outline btn--sm" onClick={() => void openProof(proof)}>Abrir</button><div className="admin-invoice-actions"><button type="button" className="btn btn--primary btn--sm" disabled={proof.status === 'approved'} onClick={() => void reviewProof(proof, 'approve')}>Aprovar</button><button type="button" className="btn btn--outline btn--sm" onClick={() => void reviewProof(proof, 'request_new')}>Pedir novo</button><button type="button" className="btn btn--outline btn--sm" onClick={() => void reviewProof(proof, 'reject')}>Rejeitar</button></div></article>)}</div></section>}

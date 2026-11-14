@@ -2874,9 +2874,16 @@
 .admin-nav__identity { display:flex; align-items:center; gap:10px; padding:10px 8px 16px; margin-bottom:6px; border-bottom:1px solid rgba(255,255,255,.1); }
 .admin-nav__identity img { width:120px; height:auto; }
 .admin-nav__identity span { color:#9aa6af; font-size:10px; line-height:1.2; }
+.admin-nav__search { display:block; margin:0 0 12px; }
+.admin-nav__search input { width:100%; min-height:34px; padding:8px 10px; border:1px solid #263641; border-radius:3px; background:#101d27; color:#eaf0f3; font:inherit; font-size:11px; }
+.admin-nav__search input::placeholder { color:#76848d; }
+.admin-nav__group { display:grid; gap:2px; margin-bottom:10px; }
+.admin-nav__group h2 { margin:4px 8px 2px; color:#7d8b95; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
 .admin-nav button,.admin-nav__bottom a { display:flex; align-items:center; gap:10px; width:100%; padding:11px 10px; border:0; background:transparent; color:#c7d0d6; text-align:left; font:inherit; font-size:12px; cursor:pointer; }
+.admin-nav button span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .admin-nav button:hover,.admin-nav button.is-active,.admin-nav__bottom a:hover { color:#fff; background:var(--primary); }
 .admin-nav .icn { font-size:15px; color:#f19a5d; }
+.admin-nav__empty { margin:8px; color:#9aa6af; font-size:11px; }
 .admin-nav__bottom { display:grid; gap:4px; margin-top:auto; padding-top:18px; border-top:1px solid rgba(255,255,255,.1); }
 .admin-nav__bottom a { text-decoration:none; }
 .admin-main { min-width:0; }
@@ -2890,10 +2897,13 @@
 .admin-card__subhead { margin:5px 0 0; color:var(--muted); font-size:12px; }
 .admin-message--banner { padding:10px 12px; background:#fff4ed; border-left:3px solid var(--primary); }
 .admin-products-grid { grid-template-columns:minmax(270px,.8fr) minmax(0,1.2fr); }
+.admin-toolbar { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(130px,1fr) minmax(130px,1fr); gap:8px; margin:-4px 0 16px; }
+.admin-toolbar input,.admin-toolbar select { min-height:34px; padding:7px 9px; border:1px solid #d7dde8; border-radius:4px; background:#fff; color:var(--dark); font:inherit; font-size:12px; }
 .admin-settings-card { max-width:720px; }
 .admin-settings-form { max-width:520px; }
 @media (max-width:900px) { .admin-shell { grid-template-columns:1fr; } .admin-nav { position:static; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; } .admin-nav__identity { grid-column:1/-1; } .admin-nav__bottom { grid-column:1/-1; display:flex; padding-top:8px; } .admin-nav__bottom a { width:auto; } }
 @media (max-width:640px) { .admin-nav { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-nav__identity { grid-column:1/-1; } .admin-quick-grid { grid-template-columns:1fr; } }
+@media (max-width:640px) { .admin-toolbar { grid-template-columns:1fr; } }
 
 .account-welcome { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:22px 24px; margin-bottom:16px; background:#071018; color:#fff; border-left:4px solid var(--primary); }
 .account-welcome h2 { margin:0 0 6px; font-size:23px; }
