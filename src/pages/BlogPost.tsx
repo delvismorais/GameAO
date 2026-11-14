@@ -40,7 +40,7 @@ export function BlogPost() {
     }
     addComment(post.slug, form.author, form.text);
     setForm({ author: '', email: '', text: '' });
-    showToast('Comentário publicado (demonstração).');
+    showToast('Comentário publicado.');
   };
 
   return (
@@ -101,7 +101,7 @@ export function BlogPost() {
                 <div className="comment__avatar">A</div>
                 <div className="comment__body">
                   <strong>Administrador</strong>
-                  <span>Comentário de demonstração</span>
+                  <span>Comentário do leitor</span>
                   <p>Obrigado pela partilha. A equipa GameAO vai continuar a acompanhar este tema nas próximas notícias.</p>
                 </div>
               </div>

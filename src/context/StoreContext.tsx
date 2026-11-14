@@ -65,6 +65,7 @@ export interface User {
   name: string;
   email: string;
   phone: string;
+  role?: string;
 }
 
 export interface BlogComment {
@@ -335,7 +336,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         exchangeRate: rate,
         customer,
         note,
-        paymentMethod: 'Pagamento na entrega (demonstração)',
+        paymentMethod: 'Pagamento na entrega',
         status: 'Pendente',
       };
       setOrders((current) => [order, ...current]);

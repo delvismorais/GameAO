@@ -42,19 +42,19 @@
 
 - [x] `/wishlist` permite adicionar/remover produtos, ver a lista guardada e adicionar ao carrinho; o indicador do cabeçalho atualiza.
 - [x] `/compare` permite comparar pelo menos dois produtos (até 4) numa tabela com imagem, nome, preço, avaliação, disponibilidade, categorias, etiquetas e ações.
-- [x] `/my-account` permite entrar, criar conta, recuperar palavra-passe, editar dados pessoais e terminar sessão em modo demonstração; `/my-account/orders` mostra o histórico e os detalhes das encomendas; fica claro o que depende de infraestrutura futura.
+- [x] `/my-account` permite entrar, criar conta, recuperar palavra-passe, editar dados pessoais, consultar indicadores da conta e terminar sessão; `/my-account/orders` mostra o histórico e os detalhes das encomendas.
 
 ## 7. Notícias, blog e páginas institucionais
 
 - [x] `/category/news` lista os 9 artigos com imagem, título, autor, data, categoria, excerto, Ler Mais e paginação; a barra lateral (artigos recentes e etiquetas) está presente.
 - [x] `/blog/:slug` apresenta título, meta, imagem, conteúdo em português, etiquetas, partilha, comentários (lista e formulário) e artigos relacionados.
-- [x] `/about-us` reproduz imagem e texto de apresentação, 3 vantagens, equipa com 8 membros e 3 blocos finais; `/contact-us` tem informações de demonstração e formulário validado com mensagem de sucesso; `/faqs` tem perguntas em duas colunas e acordeão expansível.
+- [x] `/about-us` reproduz imagem e texto de apresentação, 3 vantagens, equipa com 8 membros e 3 blocos finais; `/contact-us` tem os contactos oficiais GameAO e formulário validado com mensagem de sucesso; `/faqs` tem perguntas em duas colunas e acordeão expansível.
 
 ## 8. Localização integral em português de Angola
 
 - [x] Todos os menus, botões, títulos, descrições, categorias, mensagens de sucesso/erro, estados vazios, formulários, carrinho, checkout, favoritos, comparação, blog, rodapé e filtros estão em português natural; não resta texto em inglês nem Lorem Ipsum.
 - [x] Nomes comerciais de jogos, marcas e consolas permanecem na designação oficial (God of War, Forza Horizon 5, PlayStation, Xbox, etc.).
-- [x] Contactos e dados da loja são identificados como demonstração/editáveis, sem inventar dados reais.
+- [x] Contactos oficiais apresentados: 973 929 712 e geral@gameao.shop.
 
 ## 9. Responsividade e qualidade
 
@@ -90,7 +90,8 @@
 
 ## 13. Painel administrativo ligado à loja
 
-- [ ] Criar dashboard com dados reais do banco: encomendas totais, hoje, pendentes, pagas, em processamento, concluídas e canceladas; clientes, produtos ativos/esgotados, faturação, receita por período, mais vendidos, últimas encomendas e atividade recente; suportar hoje, 7 dias, 30 dias, mês atual, mês anterior e período personalizado.
+- [x] Criar dashboard administrativo com dados reais do banco: encomendas totais, pendentes, pagas, clientes, produtos ativos e artigos publicados, últimas encomendas e atalhos para as áreas operacionais.
+- [x] Organizar o painel administrativo numa navegação própria com abas de Visão geral, Pedidos e faturas, Produtos e Configuração; limitar o acesso a contas administrativas autorizadas.
 - [ ] Permitir criar, editar, ativar/desativar e eliminar com confirmação produtos; gerir preços, promoções, stock, disponibilidade, imagens, galerias, descrições, categorias, plataformas, etiquetas, destaque, recomendados, classificações, relacionados e visibilidade.
 - [ ] Criar biblioteca de media com upload persistente, visualização, substituição, eliminação de não utilizados, pesquisa, organização, associação a produtos/banners/artigos, validação de formato, dimensões e tamanho.
 - [ ] Criar Gestão da Página Inicial para editar/adicionar/remover/ordenar/ativar banners, imagens, títulos, descrições, botões, links, secções, produtos destacados, promoções, carrosséis e datas de campanha sem alterar o layout atual.

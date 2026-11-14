@@ -14,7 +14,7 @@ export function writeStorage<T>(key: string, value: T): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // A demo continua a funcionar em memória se o armazenamento estiver bloqueado.
+    // A loja continua a funcionar em memória se o armazenamento estiver bloqueado.
   }
 }
 

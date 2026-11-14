@@ -10,7 +10,7 @@ import { formatDatePt, formatUsdAsAoa } from '../lib/pricing';
 type Mode = 'login' | 'register' | 'lost';
 
 export function Account() {
-  const { user, login, register, logout, updateProfile, orders } = useStore();
+  const { user, login, register, logout, updateProfile, orders, wishlist, compare, cartCount } = useStore();
   const { showToast } = useToast();
   const [mode, setMode] = useState<Mode>('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -103,12 +103,23 @@ export function Account() {
             <Link to="/my-account/orders"><Icon name="cart" /> Encomendas <span>{orders.length}</span></Link>
             <Link to="/wishlist"><Icon name="heart" /> Lista de desejos</Link>
             <Link to="/compare"><Icon name="compare" /> Comparar produtos</Link>
+            {(user.role === 'admin' || user.role === 'super_admin') && <Link to="/admin"><Icon name="category" /> Painel administrativo</Link>}
             <button type="button" onClick={() => { logout(); showToast('Sessão terminada.', 'info'); }}>
               <Icon name="close" /> Terminar sessão
             </button>
           </aside>
 
           <div className="account-content">
+            <section className="account-welcome">
+              <div><p className="page-kicker">Área pessoal</p><h2>Olá, {user.name.split(' ')[0]}</h2><p>Consulte os seus pedidos, atualize os seus dados e continue a explorar a GameAO.</p></div>
+              <Link to="/shop" className="btn btn--primary">Explorar a loja</Link>
+            </section>
+            <section className="account-summary" aria-label="Resumo da conta">
+              <Link to="/my-account/orders"><span>Encomendas</span><strong>{orders.length}</strong><small>Ver histórico</small></Link>
+              <Link to="/wishlist"><span>Lista de desejos</span><strong>{wishlist.length}</strong><small>Produtos guardados</small></Link>
+              <Link to="/compare"><span>Comparação</span><strong>{compare.length}</strong><small>Produtos selecionados</small></Link>
+              <Link to="/cart"><span>Carrinho</span><strong>{cartCount}</strong><small>Artigos atuais</small></Link>
+            </section>
             <section className="account-section">
               <h2>Dados pessoais</h2>
               <form onSubmit={submitProfile} className="account-form">

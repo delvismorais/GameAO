@@ -214,8 +214,7 @@ export function Product() {
               <p key={paragraph.slice(0, 24)}>{paragraph}</p>
             ))}
             <div className="product-description__notice">
-              <strong>Nota de demonstração:</strong> as descrições são textos originais em português
-              criados para esta reconstrução. Os nomes e capas pertencem aos respetivos titulares.
+              <strong>Informação editorial:</strong> as descrições são apresentadas em português. Os nomes e capas pertencem aos respetivos titulares.
             </div>
           </div>
         ) : (
@@ -245,8 +244,7 @@ export function Product() {
             <form className="review-form" onSubmit={submitReview}>
               <h3>Adicionar uma avaliação</h3>
               <p className="review-form__note">
-                A sua opinião ajuda outros jogadores. A avaliação fica guardada neste dispositivo
-                (demonstração).
+                A sua opinião ajuda outros jogadores. A avaliação fica guardada neste dispositivo.
               </p>
               <div className="review-form__rating">
                 <span>A sua classificação</span>

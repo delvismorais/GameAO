@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageShell } from '../components/layout/PageShell';
+import { Icon } from '../components/ui/Icon';
 import { useSettings } from '../context/SettingsContext';
 import { formatUsdAsAoa } from '../lib/pricing';
 
@@ -10,32 +11,16 @@ type Overview = {
   products: { total: number; active: number };
   posts: { total: number; published: number };
 };
-
-type AdminProduct = {
-  id: string;
-  name: string;
-  slug: string;
-  basePriceUsd: number;
-  salePriceUsd?: number;
-  isActive: boolean;
-  image: string;
-};
+type AdminProduct = { id: string; name: string; slug: string; basePriceUsd: number; salePriceUsd?: number; isActive: boolean; image: string };
 type AdminOrder = { order_number: string; customer_name: string; customer_email: string; total_aoa: number; status: string; payment_status: string; created_at: string; item_count: number };
+type AdminTab = 'dashboard' | 'orders' | 'products' | 'settings';
+
 const ORDER_STATUS_OPTIONS = [
   ['awaiting_payment', 'A aguardar pagamento'], ['payment_confirmed', 'Pagamento confirmado'], ['processing', 'Em processamento'],
   ['ready_for_delivery', 'Pronta para entrega'], ['completed', 'Concluída'], ['cancelled', 'Cancelada'], ['refunded', 'Reembolsada'],
 ] as const;
-
-const EMPTY_FORM = {
-  name: '',
-  slug: '',
-  basePriceUsd: '',
-  salePriceUsd: '',
-  image: '/assets/products/game-1.jpg',
-  imageCard: '/assets/products/game-1-card.jpg',
-  shortDescription: '',
-  platform: '',
-};
+const EMPTY_FORM = { name: '', slug: '', basePriceUsd: '', salePriceUsd: '', image: '/assets/products/game-1.jpg', imageCard: '/assets/products/game-1-card.jpg', shortDescription: '', platform: '' };
+const money = new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2 });
 
 export function Admin() {
   const { rate, config, updateConfig } = useSettings();
@@ -48,76 +33,38 @@ export function Admin() {
   const [message, setMessage] = useState('');
   const [rateDraft, setRateDraft] = useState(String(rate));
   const [rateSource, setRateSource] = useState(config.source);
+  const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
 
   const load = useCallback(async () => {
     setLoading(true);
     const [overviewResponse, productsResponse, ordersResponse] = await Promise.all([
-      fetch('/api/admin/overview', { credentials: 'include' }),
-      fetch('/api/admin/products', { credentials: 'include' }),
-      fetch('/api/admin/orders', { credentials: 'include' }),
+      fetch('/api/admin/overview', { credentials: 'include' }), fetch('/api/admin/products', { credentials: 'include' }), fetch('/api/admin/orders', { credentials: 'include' }),
     ]);
-    if (overviewResponse.status === 403 || productsResponse.status === 403 || ordersResponse.status === 403) {
-      setForbidden(true);
-      setLoading(false);
-      return;
-    }
+    if ([overviewResponse, productsResponse, ordersResponse].some((response) => response.status === 403)) { setForbidden(true); setLoading(false); return; }
     if (overviewResponse.ok && productsResponse.ok && ordersResponse.ok) {
-      const overviewData = await overviewResponse.json() as Overview;
-      const productsData = await productsResponse.json() as { products: AdminProduct[] };
-      setOverview(overviewData);
-      setProducts(productsData.products);
-      const ordersData = await ordersResponse.json() as { orders: AdminOrder[] };
-      setOrders(ordersData.orders);
+      setOverview(await overviewResponse.json() as Overview);
+      setProducts((await productsResponse.json() as { products: AdminProduct[] }).products);
+      setOrders((await ordersResponse.json() as { orders: AdminOrder[] }).orders);
       setForbidden(false);
     }
     setLoading(false);
   }, []);
-
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setRateDraft(String(rate)); setRateSource(config.source); }, [rate, config.source]);
 
   const updateForm = (key: keyof typeof EMPTY_FORM, value: string) => setForm((current) => ({ ...current, [key]: value }));
-
   const createProduct = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setMessage('');
-    const response = await fetch('/api/admin/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        ...form,
-        basePriceUsd: Number(form.basePriceUsd),
-        salePriceUsd: form.salePriceUsd ? Number(form.salePriceUsd) : null,
-        tags: [],
-        description: form.shortDescription ? [form.shortDescription] : [],
-        releaseYear: new Date().getFullYear(),
-      }),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => null) as { message?: string } | null;
-      setMessage(data?.message ?? 'Não foi possível criar o produto.');
-      return;
-    }
-    setForm(EMPTY_FORM);
-    setMessage('Produto criado e guardado na base de dados.');
-    await load();
+    event.preventDefault(); setMessage('');
+    const response = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ ...form, basePriceUsd: Number(form.basePriceUsd), salePriceUsd: form.salePriceUsd ? Number(form.salePriceUsd) : null, tags: [], description: form.shortDescription ? [form.shortDescription] : [], releaseYear: new Date().getFullYear() }) });
+    if (!response.ok) { const data = await response.json().catch(() => null) as { message?: string } | null; setMessage(data?.message ?? 'Não foi possível criar o produto.'); return; }
+    setForm(EMPTY_FORM); setMessage('Produto criado e guardado na base de dados.'); await load();
   };
-
   const toggleProduct = async (product: AdminProduct) => {
-    const response = await fetch(`/api/admin/products/${encodeURIComponent(product.id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ isActive: !product.isActive }),
-    });
+    const response = await fetch(`/api/admin/products/${encodeURIComponent(product.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ isActive: !product.isActive }) });
     if (response.ok) await load();
   };
-
   const updateOrderStatus = async (order: AdminOrder, status: string) => {
-    const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.order_number)}/status`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status }),
-    });
+    const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.order_number)}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status }) });
     if (response.ok) {
       const data = await response.json() as { notifications?: { email: string; whatsapp: string } };
       setOrders((current) => current.map((item) => item.order_number === order.order_number ? { ...item, status } : item));
@@ -126,110 +73,52 @@ export function Admin() {
       setMessage(`Pedido ${order.order_number} atualizado; ${email}, ${whatsapp}.`);
     } else setMessage('Não foi possível atualizar o estado do pedido.');
   };
-
   const saveRate = async (event: React.FormEvent) => {
     event.preventDefault();
-    const response = await fetch('/api/admin/settings/exchange-rate', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ usdToAoa: Number(rateDraft), source: rateSource, note: 'Taxa configurável pelo painel administrativo.' }),
-    });
-    if (response.ok) {
-      const saved = await response.json() as { usdToAoa: number; source: string; updatedAt: string; note: string };
-      updateConfig(saved);
-      setMessage('Taxa atualizada. Os preços serão recalculados em toda a loja.');
-    } else setMessage('Não foi possível atualizar a taxa.');
+    const response = await fetch('/api/admin/settings/exchange-rate', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ usdToAoa: Number(rateDraft), source: rateSource, note: 'Taxa gerida no painel administrativo.' }) });
+    if (response.ok) { const saved = await response.json() as { usdToAoa: number; source: string; updatedAt: string; note: string }; updateConfig(saved); setMessage('Taxa atualizada em toda a loja.'); }
+    else setMessage('Não foi possível atualizar a taxa.');
   };
 
-  if (forbidden) {
-    return (
-      <PageShell crumbs={[{ label: 'Administração' }]}>
-        <div className="admin-empty">
-          <h1 className="page-title">Administração</h1>
-          <p>Esta área requer uma conta administrativa autorizada.</p>
-          <Link to="/my-account" className="btn btn--primary">Iniciar sessão</Link>
-        </div>
-      </PageShell>
-    );
-  }
+  if (forbidden) return <PageShell crumbs={[{ label: 'Administração' }]}><div className="admin-empty"><h1 className="page-title">Administração</h1><p>Esta área requer uma conta administrativa autorizada.</p><Link to="/my-account" className="btn btn--primary">Iniciar sessão</Link></div></PageShell>;
 
-  return (
-    <PageShell crumbs={[{ label: 'Administração' }]}>
-      <div className="admin-head">
-        <div>
-          <p className="page-kicker">GameAO · operação</p>
-          <h1 className="page-title">Painel administrativo</h1>
-          <p className="page-subtitle">Dados reais da base de dados. As alterações de produtos refletem-se no catálogo ligado ao backend.</p>
-        </div>
-        <Link to="/my-account" className="btn btn--outline btn--sm">Minha conta</Link>
-      </div>
-
-      {loading ? <p className="admin-state">A carregar dados do servidor…</p> : (
-        <>
-          <section className="admin-metrics" aria-label="Resumo operacional">
-            <article><span>Encomendas</span><strong>{overview?.orders.total ?? 0}</strong><small>{overview?.orders.pending ?? 0} pendentes</small></article>
-            <article><span>Pagas</span><strong>{overview?.orders.paid ?? 0}</strong><small>confirmadas</small></article>
-            <article><span>Clientes</span><strong>{overview?.customers.total ?? 0}</strong><small>registados</small></article>
-            <article><span>Produtos</span><strong>{overview?.products.active ?? 0}</strong><small>de {overview?.products.total ?? 0} ativos</small></article>
-            <article><span>Artigos</span><strong>{overview?.posts.published ?? 0}</strong><small>publicados</small></article>
-          </section>
-
-          <section className="admin-card admin-orders-card">
-            <div className="admin-card__head"><h2>Pedidos e faturas</h2><span>{orders.length} registos</span></div>
-            <div className="admin-products-table">
-              {orders.length === 0 && <p className="admin-message">Ainda não existem pedidos registados.</p>}
-              {orders.map((order) => (
-                <article key={order.order_number}>
-                  <div><strong>{order.order_number}</strong><small>{order.customer_name} · {order.customer_email}</small></div>
-                  <span>{new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2 }).format(Number(order.total_aoa))} Kz</span>
-                  <label className="admin-order-status"><span>Estado</span><select value={order.status} onChange={(event) => void updateOrderStatus(order, event.target.value)}>{ORDER_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                  <div className="admin-invoice-actions"><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=classic`} download>Clássica</a><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=modern`} download>Moderna</a></div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <div className="admin-grid">
-            <section className="admin-card">
-              <div className="admin-card__head"><h2>Taxa de câmbio</h2><span>Aplicada globalmente</span></div>
-              <form className="admin-form" onSubmit={saveRate}>
-                <label className="field"><span>1 USD em Kz *</span><input required type="number" min="0.01" step="0.01" value={rateDraft} onChange={(event) => setRateDraft(event.target.value)} /></label>
-                <label className="field"><span>Fonte / referência</span><input value={rateSource} onChange={(event) => setRateSource(event.target.value)} /></label>
-                <p className="admin-message">Atual: {formatUsdAsAoa(1, rate)} por USD.</p>
-                <button type="submit" className="btn btn--primary">Guardar taxa</button>
-              </form>
-            </section>
-            <section className="admin-card">
-              <div className="admin-card__head"><h2>Novo produto</h2><span>Preço-base em USD</span></div>
-              <form className="admin-form" onSubmit={createProduct}>
-                <label className="field"><span>Nome *</span><input required value={form.name} onChange={(event) => updateForm('name', event.target.value)} /></label>
-                <label className="field"><span>Slug *</span><input required value={form.slug} onChange={(event) => updateForm('slug', event.target.value)} placeholder="nome-do-produto" /></label>
-                <div className="form-row">
-                  <label className="field"><span>Preço USD *</span><input required type="number" min="0" step="0.01" value={form.basePriceUsd} onChange={(event) => updateForm('basePriceUsd', event.target.value)} /></label>
-                  <label className="field"><span>Promoção USD</span><input type="number" min="0" step="0.01" value={form.salePriceUsd} onChange={(event) => updateForm('salePriceUsd', event.target.value)} /></label>
-                </div>
-                <label className="field"><span>Plataforma</span><input value={form.platform} onChange={(event) => updateForm('platform', event.target.value)} placeholder="PC, Xbox, PlayStation" /></label>
-                <label className="field"><span>Descrição curta</span><textarea rows={3} value={form.shortDescription} onChange={(event) => updateForm('shortDescription', event.target.value)} /></label>
-                <button type="submit" className="btn btn--primary">Criar produto</button>
-                {message && <p className="admin-message">{message}</p>}
-              </form>
-            </section>
-
-            <section className="admin-card admin-card--wide">
-              <div className="admin-card__head"><h2>Produtos</h2><span>{products.length} registos</span></div>
-              <div className="admin-products-table">
-                {products.map((product) => (
-                  <article key={product.id} className={!product.isActive ? 'is-inactive' : ''}>
-                    <img src={product.image} alt="" />
-                    <div><strong>{product.name}</strong><small>{product.slug} · {product.isActive ? 'Ativo' : 'Inativo'}</small></div>
-                    <span>{formatUsdAsAoa(product.salePriceUsd ?? product.basePriceUsd, rate)}</span>
-                    <button type="button" className="btn btn--outline btn--sm" onClick={() => void toggleProduct(product)}>{product.isActive ? 'Desativar' : 'Ativar'}</button>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </div>
-        </>
-      )}
-    </PageShell>
+  const navItems: Array<{ id: AdminTab; label: string; icon: 'category' | 'cart' | 'clock' }> = [
+    { id: 'dashboard', label: 'Visão geral', icon: 'category' }, { id: 'orders', label: 'Pedidos e faturas', icon: 'cart' }, { id: 'products', label: 'Produtos', icon: 'category' }, { id: 'settings', label: 'Configuração', icon: 'clock' },
+  ];
+  const orderList = (compact = false) => (
+    <div className="admin-products-table">
+      {orders.length === 0 && <p className="admin-message">Ainda não existem pedidos registados.</p>}
+      {(compact ? orders.slice(0, 5) : orders).map((order) => (
+        <article key={order.order_number}>
+          <div><strong>{order.order_number}</strong><small>{order.customer_name} · {order.customer_email}</small></div>
+          <span>{money.format(Number(order.total_aoa))} Kz</span>
+          {!compact && <label className="admin-order-status"><span>Estado</span><select value={order.status} onChange={(event) => void updateOrderStatus(order, event.target.value)}>{ORDER_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
+          {!compact && <div className="admin-invoice-actions"><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=classic`} download>Clássica</a><a className="btn btn--outline btn--sm" href={`/api/admin/orders/${encodeURIComponent(order.order_number)}/invoice?template=modern`} download>Moderna</a></div>}
+        </article>
+      ))}
+    </div>
   );
+
+  return <PageShell crumbs={[{ label: 'Administração' }]}>
+    <div className="admin-head"><div><p className="page-kicker">GameAO · operação</p><h1 className="page-title">Painel administrativo</h1><p className="page-subtitle">Gestão centralizada do catálogo, pedidos, preços e operação da loja.</p></div><Link to="/my-account" className="btn btn--outline btn--sm">Minha conta</Link></div>
+    <div className="admin-shell">
+      <nav className="admin-nav" aria-label="Menu administrativo">
+        <div className="admin-nav__identity"><img src="/assets/logo.png" alt="GameAO" /><span>Área de gestão</span></div>
+        {navItems.map((item) => <button type="button" key={item.id} className={activeTab === item.id ? 'is-active' : ''} onClick={() => { setActiveTab(item.id); setMessage(''); }}><Icon name={item.icon} />{item.label}</button>)}
+        <div className="admin-nav__bottom"><Link to="/" target="_blank"><Icon name="arrowRight" /> Ver loja</Link><Link to="/my-account"><Icon name="user" /> Perfil</Link></div>
+      </nav>
+      <main className="admin-main">
+        {loading ? <p className="admin-state">A carregar dados do servidor…</p> : <>
+          {activeTab === 'dashboard' && <>
+            <section className="admin-metrics" aria-label="Resumo operacional"><article><span>Encomendas</span><strong>{overview?.orders.total ?? 0}</strong><small>{overview?.orders.pending ?? 0} pendentes</small></article><article><span>Pagas</span><strong>{overview?.orders.paid ?? 0}</strong><small>confirmadas</small></article><article><span>Clientes</span><strong>{overview?.customers.total ?? 0}</strong><small>registados</small></article><article><span>Produtos</span><strong>{overview?.products.active ?? 0}</strong><small>de {overview?.products.total ?? 0} ativos</small></article><article><span>Conteúdos</span><strong>{overview?.posts.published ?? 0}</strong><small>publicados</small></article></section>
+            <div className="admin-quick-grid"><button type="button" onClick={() => setActiveTab('orders')}><Icon name="cart" /><strong>Gerir pedidos</strong><span>Atualizar estados e descarregar faturas</span></button><button type="button" onClick={() => setActiveTab('products')}><Icon name="category" /><strong>Gerir produtos</strong><span>Criar, ativar ou desativar produtos</span></button><button type="button" onClick={() => setActiveTab('settings')}><Icon name="clock" /><strong>Configurar loja</strong><span>Alterar a taxa interna de preços</span></button></div>
+            <section className="admin-card"><div className="admin-card__head"><h2>Pedidos recentes</h2><button type="button" className="btn btn--outline btn--sm" onClick={() => setActiveTab('orders')}>Ver todos</button></div>{orderList(true)}</section>
+          </>}
+          {activeTab === 'orders' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Pedidos e faturas</h2><p className="admin-card__subhead">Altere o estado do pedido e descarregue um dos modelos de fatura.</p></div><span>{orders.length} registos</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}{orderList()}</section>}
+          {activeTab === 'products' && <div className="admin-grid admin-products-grid"><section className="admin-card"><div className="admin-card__head"><h2>Novo produto</h2><span>Preço-base em USD</span></div><form className="admin-form" onSubmit={createProduct}><label className="field"><span>Nome *</span><input required value={form.name} onChange={(event) => updateForm('name', event.target.value)} /></label><label className="field"><span>Slug *</span><input required value={form.slug} onChange={(event) => updateForm('slug', event.target.value)} placeholder="nome-do-produto" /></label><div className="form-row"><label className="field"><span>Preço USD *</span><input required type="number" min="0" step="0.01" value={form.basePriceUsd} onChange={(event) => updateForm('basePriceUsd', event.target.value)} /></label><label className="field"><span>Promoção USD</span><input type="number" min="0" step="0.01" value={form.salePriceUsd} onChange={(event) => updateForm('salePriceUsd', event.target.value)} /></label></div><label className="field"><span>Plataforma</span><input value={form.platform} onChange={(event) => updateForm('platform', event.target.value)} placeholder="PC, Xbox, PlayStation" /></label><label className="field"><span>Descrição curta</span><textarea rows={3} value={form.shortDescription} onChange={(event) => updateForm('shortDescription', event.target.value)} /></label><button type="submit" className="btn btn--primary">Criar produto</button>{message && <p className="admin-message">{message}</p>}</form></section><section className="admin-card admin-card--wide"><div className="admin-card__head"><h2>Catálogo</h2><span>{products.length} registos</span></div><div className="admin-products-table">{products.map((product) => <article key={product.id} className={!product.isActive ? 'is-inactive' : ''}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{product.slug} · {product.isActive ? 'Ativo' : 'Inativo'}</small></div><span>{formatUsdAsAoa(product.salePriceUsd ?? product.basePriceUsd, rate)}</span><button type="button" className="btn btn--outline btn--sm" onClick={() => void toggleProduct(product)}>{product.isActive ? 'Desativar' : 'Ativar'}</button></article>)}</div></section></div>}
+          {activeTab === 'settings' && <section className="admin-card admin-settings-card"><div className="admin-card__head"><div><h2>Configuração da loja</h2><p className="admin-card__subhead">Estas definições são internas e não aparecem na navegação pública.</p></div></div><form className="admin-form admin-settings-form" onSubmit={saveRate}><label className="field"><span>1 USD em Kz *</span><input required type="number" min="0.01" step="0.01" value={rateDraft} onChange={(event) => setRateDraft(event.target.value)} /></label><label className="field"><span>Fonte / referência</span><input value={rateSource} onChange={(event) => setRateSource(event.target.value)} /></label><p className="admin-message">Valor atual: {formatUsdAsAoa(1, rate)} por USD. O preço dos produtos, carrinho e checkout acompanha esta taxa.</p><button type="submit" className="btn btn--primary">Guardar configuração</button>{message && <p className="admin-message admin-message--banner">{message}</p>}</form></section>}
+        </>}
+      </main>
+    </div>
+  </PageShell>;
 }

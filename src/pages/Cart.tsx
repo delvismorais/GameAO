@@ -88,7 +88,7 @@ export function Cart() {
                   className="coupon"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    showToast('Nesta demonstração não existem cupões ativos. O campo será ativado na fase comercial.', 'info');
+                    showToast('Não existem cupões ativos neste momento. O campo será disponibilizado quando houver campanhas.', 'info');
                   }}
                 >
                   <input type="text" placeholder="Código do cupão" aria-label="Código do cupão" />
@@ -120,7 +120,7 @@ export function Cart() {
                 A taxa aplicada é gerida internamente pela loja.
               </p>
               <Link to="/checkout" className="btn btn--primary btn--block">Finalizar Compra</Link>
-              <p className="cart-totals__demo">Demonstração — não é processado qualquer pagamento real.</p>
+              <p className="cart-totals-note">Pagamento na entrega. A confirmação será feita pela equipa GameAO.</p>
             </aside>
           </div>
 

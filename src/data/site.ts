@@ -226,7 +226,7 @@ export const ABOUT_BLOCKS = [
   },
   {
     title: 'A nossa história',
-    text: 'A GameAO nasce de uma paixão partilhada pelos jogos e da vontade de criar uma loja local com identidade própria. Esta demonstração é o primeiro passo desse caminho.',
+    text: 'A GameAO nasce de uma paixão partilhada pelos jogos e da vontade de criar uma loja local com identidade própria. A plataforma nasce para aproximar jogadores angolanos dos seus jogos favoritos.',
     image: '/assets/about/block-3.jpg',
   },
 ];
@@ -260,7 +260,7 @@ export const FAQ_QUICK = [
   },
   {
     q: 'Preciso de uma conta para fazer uma encomenda?',
-    a: 'Não é obrigatório nesta demonstração. Pode finalizar a compra como convidado. Criar conta permite guardar favoritos, comparar produtos e consultar o histórico de encomendas.',
+    a: 'Não é obrigatório. Pode finalizar a compra como convidado. Criar conta permite guardar favoritos, comparar produtos e consultar o histórico de encomendas.',
   },
   {
     q: 'Como faço para colocar uma encomenda?',
@@ -279,7 +279,7 @@ export const FAQ_ACCORDION = [
   },
   {
     q: 'Como faço uma encomenda?',
-    a: 'Adicione os produtos ao carrinho, abra a página do carrinho e clique em Finalizar Compra. Preencha o formulário de faturação, reveja o resumo e confirme. Nesta fase de demonstração não é processado qualquer pagamento real.',
+    a: 'Adicione os produtos ao carrinho, abra a página do carrinho e clique em Finalizar Compra. Preencha o formulário de faturação, reveja o resumo e confirme. O pagamento na entrega é confirmado pela equipa GameAO.',
   },
   {
     q: 'Posso devolver um jogo?',
@@ -287,7 +287,7 @@ export const FAQ_ACCORDION = [
   },
   {
     q: 'Os pagamentos são seguros?',
-    a: 'Nesta demonstração não são recolhidos dados de cartão nem processados pagamentos reais. O método apresentado é apenas ilustrativo. Numa fase futura serão integrados gateways certificados.',
+    a: 'Os dados de cartão não são recolhidos. O pagamento na entrega é confirmado pela equipa GameAO; outros métodos serão disponibilizados quando forem ativados.',
   },
   {
     q: 'Como contacto o apoio ao cliente?',
@@ -304,7 +304,7 @@ export const CONTACT_INFO = {
     { label: 'Telemóvel', value: '973 929 712' },
   ],
   email: 'geral@gameao.shop',
-  addresses: ['Luanda, Angola', 'Endereço de demonstração — a confirmar'],
+  addresses: ['Luanda, Angola', 'Luanda, Angola'],
 };
 
 export const FOOTER_TAGS = [

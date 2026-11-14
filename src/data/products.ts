@@ -351,7 +351,7 @@ export const PRODUCTS: Product[] = [
       'Disponível para PC e Xbox, é uma opção leve para sessões curtas ou para competir com amigos no mesmo ecrã.',
     ],
     releaseYear: 2020,
-    developer: 'Demo Studio',
+    developer: 'Arcade Studio',
     platform: 'PC, Xbox One',
   },
   {

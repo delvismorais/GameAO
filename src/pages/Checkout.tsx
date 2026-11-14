@@ -99,12 +99,11 @@ export function Checkout() {
       <h1 className="page-title">Finalizar Compra</h1>
       <p className="page-subtitle">Preencha os dados de faturação e reveja a sua encomenda.</p>
 
-      <div className="checkout-demo-notice">
+      <div className="checkout-note">
         <Icon name="clock" />
         <span>
-            <strong>Encomenda sem pagamento online:</strong> os dados serão registados e a confirmação
-            ficará disponível com o número único da encomenda. A integração de pagamento será adicionada
-            numa fase própria.
+            <strong>Pagamento na entrega:</strong> os dados serão registados e a confirmação ficará disponível
+            com o número único da encomenda.
         </span>
       </div>
 

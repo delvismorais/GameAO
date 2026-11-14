@@ -50,7 +50,7 @@ export function Contact() {
                 <p key={address}><span>{address}</span></p>
               ))}
             </div>
-            <p className="contact-demo">
+            <p className="contact-note">
               <Icon name="clock" /> Os dados de contacto são geridos no painel administrativo.
             </p>
           </aside>

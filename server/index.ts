@@ -50,6 +50,18 @@ async function recordAudit(userId: number, action: string, entityType: string, e
   );
 }
 
+function parseArrayValue(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return raw.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+}
+
 async function readCatalogProducts(includeInactive = false) {
   const [rows] = await getPool().query<any[]>(
     `SELECT p.*, GROUP_CONCAT(c.slug ORDER BY c.slug SEPARATOR ',') AS category_slugs
@@ -69,7 +81,7 @@ async function readCatalogProducts(includeInactive = false) {
     rating: Number(row.rating),
     reviewCount: Number(row.review_count),
     categories: row.category_slugs ? String(row.category_slugs).split(',') : [],
-    tags: JSON.parse(String(row.tags_json ?? '[]')),
+    tags: parseArrayValue(row.tags_json),
     image: row.image_url,
     imageCard: row.image_card_url,
     hot: Boolean(row.is_hot),
@@ -78,7 +90,7 @@ async function readCatalogProducts(includeInactive = false) {
     recentOrder: row.recent_order === null ? undefined : Number(row.recent_order),
     dealOrder: row.deal_order === null ? undefined : Number(row.deal_order),
     shortDescription: row.short_description,
-    description: JSON.parse(String(row.description_json ?? '[]')),
+    description: parseArrayValue(row.description_json),
     releaseYear: Number(row.release_year),
     developer: row.developer,
     platform: row.platform,

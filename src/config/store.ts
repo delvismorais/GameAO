@@ -43,6 +43,6 @@ export const STORE_INFO = {
   currencySymbol: 'Kz',
   locale: 'pt-AO',
   country: 'Angola',
-  demoNotice:
-    'Conteúdos iniciais geridos pelo painel administrativo. Os dados da loja, contactos e artigos podem ser atualizados sem alterar o código.',
+  managementNote:
+    'Conteúdos geridos pelo painel administrativo. Os dados da loja, contactos e artigos podem ser atualizados sem alterar o código.',
 };
