@@ -38,9 +38,9 @@ export const STORAGE_KEYS = {
 export const STORE_INFO = {
   name: 'GameAO',
   tagline: 'A sua loja de videojogos em Angola.',
-  currency: 'USD',
-  currencySymbol: '$',
-  locale: 'en-US',
+  currency: 'Kz',
+  currencySymbol: 'Kz',
+  locale: 'pt-AO',
   country: 'Angola',
   managementNote:
     'Conteúdos geridos pelo painel administrativo. Os dados da loja, contactos e artigos podem ser atualizados sem alterar o código.',

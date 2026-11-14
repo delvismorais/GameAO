@@ -25,6 +25,7 @@ import { Faq } from './pages/Faq';
 import { Admin } from './pages/Admin';
 import { OrderTracking } from './pages/OrderTracking';
 import { NotFound } from './pages/NotFound';
+import { Legal } from './pages/Legal';
 import { captureAffiliateCodeFromUrl } from './lib/affiliate';
 
 export default function App() {
@@ -54,6 +55,8 @@ export default function App() {
                 <Route path="/about-us" element={<About />} />
                 <Route path="/contact-us" element={<Contact />} />
                 <Route path="/faqs" element={<Faq />} />
+                <Route path="/politica-de-privacidade" element={<Legal kind="privacy" />} />
+                <Route path="/termos-e-condicoes" element={<Legal kind="terms" />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/acompanhar-pedido" element={<OrderTracking />} />
                 <Route path="/pedido" element={<OrderTracking />} />

@@ -785,14 +785,17 @@ app.delete('/api/admin/variants/:id', asyncRoute(async (request, response) => {
 
 app.post('/api/freefire/verify', asyncRoute(async (request, response) => {
   const playerId = typeof request.body?.playerId === 'string' ? request.body.playerId.trim() : '';
-  if (!/^[0-9]{5,20}$/.test(playerId)) { response.status(400).json({ error: 'invalid_player_id', message: 'Indique um ID Free Fire numérico válido.' }); return; }
-  const providerUrl = process.env.FREEFIRE_VERIFY_URL?.trim();
-  if (!providerUrl) { response.status(503).json({ error: 'not_configured', message: 'A verificação automática de Free Fire ainda não foi configurada pela GameAO.' }); return; }
-  const providerResponse = await fetch(providerUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.FREEFIRE_VERIFY_API_KEY ? { Authorization: `Bearer ${process.env.FREEFIRE_VERIFY_API_KEY}` } : {}) }, body: JSON.stringify({ playerId }) });
+  if (!/^\d{5,20}$/.test(playerId)) { response.status(400).json({ error: 'invalid_player_id', message: 'Indique um ID Free Fire numérico válido.' }); return; }
+  const rapidApiKey = process.env.RAPIDAPI_KEY?.trim() || process.env.FREEFIRE_VERIFY_API_KEY?.trim();
+  const rapidApiHost = process.env.RAPIDAPI_HOST?.trim() || 'check-id-game1.p.rapidapi.com';
+  const providerUrl = process.env.FREEFIRE_VERIFY_URL?.trim() || `https://${rapidApiHost}/api/game/free-fire-global-2?id=${encodeURIComponent(playerId)}`;
+  if (!rapidApiKey && !process.env.FREEFIRE_VERIFY_URL?.trim()) { response.status(503).json({ error: 'not_configured', message: 'A verificação automática de Free Fire ainda não foi configurada pela GameAO.' }); return; }
+  const providerResponse = await fetch(providerUrl, { method: 'GET', headers: { Accept: 'application/json', ...(rapidApiKey ? { 'x-rapidapi-key': rapidApiKey, 'x-rapidapi-host': rapidApiHost, Authorization: `Bearer ${rapidApiKey}` } : {}) }, signal: AbortSignal.timeout(12000) });
   if (!providerResponse.ok) { response.status(502).json({ error: 'provider_error', message: 'O serviço de verificação Free Fire não respondeu corretamente.' }); return; }
-  const data = await providerResponse.json() as { valid?: boolean; nickname?: string };
-  if (!data.valid || !data.nickname) { response.status(422).json({ error: 'player_not_found', message: 'O ID Free Fire não foi validado.' }); return; }
-  response.json({ verified: true, playerId, nickname: String(data.nickname).slice(0, 180) });
+  const data = await providerResponse.json() as { status?: boolean; data?: { username?: string; level?: number; region?: string }; valid?: boolean; nickname?: string };
+  const nickname = data.data?.username || data.nickname;
+  if (!(data.status === true || data.valid === true) || !nickname) { response.status(422).json({ error: 'player_not_found', message: 'O ID Free Fire não foi validado.' }); return; }
+  response.json({ verified: true, playerId, nickname: String(nickname).slice(0, 180), level: data.data?.level, region: data.data?.region });
 }));
 
 app.get('/api/account/freefire-ids', asyncRoute(async (request, response) => {

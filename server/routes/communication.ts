@@ -15,6 +15,7 @@ import {
   notifyPasswordReset,
   publicSiteUrl,
   sendTestNotification,
+  smsConfigured,
   whatsappConfigured,
   type NotificationChannel,
 } from '../notifications';
@@ -468,10 +469,11 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (!await deps.requireAdmin(request, response)) return;
     const [site] = await Promise.all([getSiteConfig()]);
     response.json({
-      email: { configured: emailConfigured(), host: process.env.SMTP_HOST ?? '', from: process.env.SMTP_FROM ?? '' },
+      email: { configured: emailConfigured(), host: process.env.SMTP_HOST ?? process.env.EMAIL_HOST ?? '', from: process.env.SMTP_FROM ?? process.env.EMAIL_FROM ?? '' },
       whatsapp: { configured: whatsappConfigured(), phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ? 'configurado' : '', version: process.env.WHATSAPP_API_VERSION ?? 'v21.0' },
+      sms: { configured: smsConfigured(), provider: process.env.TELCOSMS_API_KEY ? 'TelcoSMS' : '' },
       storage: { configured: Boolean(process.env.R2_ENDPOINT && process.env.R2_BUCKET && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY), bucket: process.env.R2_BUCKET ?? '' },
-      freefire: { configured: Boolean(process.env.FREEFIRE_VERIFY_URL), provider: process.env.FREEFIRE_VERIFY_URL ? 'configurado' : '' },
+      freefire: { configured: Boolean(process.env.FREEFIRE_VERIFY_URL || process.env.RAPIDAPI_KEY), provider: (process.env.FREEFIRE_VERIFY_URL || process.env.RAPIDAPI_KEY) ? 'RapidAPI Free Fire' : '' },
       openai: { configured: Boolean(process.env.OPENAI_API_KEY) },
       site,
       publicUrl: publicSiteUrl(),

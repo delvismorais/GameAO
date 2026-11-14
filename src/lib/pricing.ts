@@ -3,24 +3,24 @@
  * Todos os preços visíveis devem passar por estas funções.
  */
 
-/** Compatibilidade interna para cálculos históricos; não é usado para a apresentação pública. */
+/** Conversão interna dos preços-base para a moeda padrão de apresentação da loja. */
 export function usdToAoa(usd: number, rate: number): number {
   if (!Number.isFinite(usd) || !Number.isFinite(rate) || rate <= 0) return 0;
   return Math.round(usd * rate * 100) / 100;
 }
 
-/**
- * Formata um valor monetário direto, sem apresentar conversão cambial.
- */
-export function formatAoa(value: number): string {
+function formatKz(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe);
+  return `${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe)} Kz`;
 }
 
-/** Formata o preço base diretamente, sem apresentar conversão cambial. */
-export function formatUsdAsAoa(usd: number, _rate?: number): string {
-  const safe = Number.isFinite(usd) ? usd : 0;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safe);
+export function formatAoa(value: number): string {
+  return formatKz(value);
+}
+
+/** Formata o preço base na moeda padrão Kz. */
+export function formatUsdAsAoa(usd: number, rate = 913): string {
+  return formatKz(usdToAoa(usd, rate));
 }
 
 /** Percentagem de desconto inteira (ex.: 34). */

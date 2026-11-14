@@ -1,0 +1,31 @@
+/* Mobile hardening for the admin panel. The desktop layout remains unchanged. */
+.admin-shell,.admin-shell *{box-sizing:border-box}
+.admin-shell{width:100%;max-width:100%;overflow:hidden}
+.admin-main{overflow:hidden}
+.admin-topbar__crumb{min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.admin-topbar__crumb strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin-table-wrap{max-width:100%;-webkit-overflow-scrolling:touch}
+.admin-table{min-width:620px}
+.admin-form,.admin-section,.admin-card,.admin-method,.admin-integration{min-width:0}
+@media (max-width: 640px){
+  .admin-sidebar{width:min(286px,88vw)}
+  .admin-main{padding:0 10px 22px}
+  .admin-topbar{margin:0 -10px 14px;padding:0 10px;gap:8px;min-height:56px}
+  .admin-topbar__tools{gap:3px}
+  .admin-topbar__link,.admin-topbar__user{display:none}
+  .admin-topbar__crumb{font-size:11px}
+  .admin-head--inner{align-items:stretch;flex-direction:column;gap:10px}
+  .admin-section__actions,.admin-form__actions{justify-content:flex-start;width:100%}
+  .admin-section__actions .btn,.admin-form__actions .btn{max-width:100%}
+  .admin-filterbar{align-items:stretch;flex-direction:column}
+  .admin-filterbar>input,.admin-filterbar select,.admin-filterbar button{width:100%;flex:1 1 auto}
+  .admin-detail__summary{grid-template-columns:1fr 1fr;gap:8px}
+  .admin-detail__grid,.admin-split,.admin-dashboard__grid{gap:12px}
+  .admin-media-grid,.admin-media-library{grid-template-columns:1fr}
+  .admin-bars__row{grid-template-columns:82px minmax(0,1fr) 30px;gap:6px}
+  .admin-template-list__rows button{grid-template-columns:1fr;gap:4px}
+  .admin-modal{padding:8px}
+  .admin-modal__panel,.admin-modal__panel.is-wide{width:100%;max-height:94vh}
+  .admin-modal__body{padding:14px}
+  .admin-method dl{grid-template-columns:1fr}
+}

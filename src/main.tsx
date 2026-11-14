@@ -6,6 +6,7 @@ import './styles/layout.css';
 import './styles/components.css';
 import './styles/pages.css';
 import './styles/admin.css';
+import './styles/admin-mobile.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -18,7 +18,7 @@ export function Footer() {
             <img src="/assets/gameao-logo.png" alt="GameAO" />
           </Link>
           <p>
-            {STORE_INFO.tagline} com conteúdos em português de Angola.
+            {STORE_INFO.tagline}
           </p>
           <ul className="footer-contact">
             <li>{CONTACT_INFO.email}</li>
@@ -87,6 +87,8 @@ export function Footer() {
             <li><Link to="/about-us">Sobre Nós</Link></li>
             <li><Link to="/contact-us">Contacte-nos</Link></li>
             <li><Link to="/faqs">Perguntas Frequentes</Link></li>
+            <li><Link to="/politica-de-privacidade">Política de privacidade</Link></li>
+            <li><Link to="/termos-e-condicoes">Termos e condições</Link></li>
             <li><Link to="/pedido">Acompanhar pedido</Link></li>
           </ul>
         </div>

@@ -125,7 +125,7 @@ export function Product() {
           <p className="product-short">{product.shortDescription}</p>
 
           <div className="product-stock">
-            <span className="product-stock__dot" /> Em stock — entrega em 24 a 48 horas em Luanda
+            <span className="product-stock__dot" /> Em stock — {product.categoryType === 'physical' ? 'entrega a partir de 24 horas' : 'entrega instantânea após confirmação'}
           </div>
 
           <div className="product-buy">

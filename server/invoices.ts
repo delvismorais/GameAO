@@ -36,7 +36,7 @@ const light = '#eef1f5';
 
 function money(value: number, rate = 1): string {
   const direct = Number(value) / (Number(rate) > 0 ? Number(rate) : 1);
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(direct) ? direct : 0);
+  return `${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(direct) ? direct : 0)} Kz`;
 }
 
 function date(value: Date | string): string {

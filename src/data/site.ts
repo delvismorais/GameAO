@@ -252,7 +252,7 @@ export const ABOUT_FEATURES = [
 export const FAQ_QUICK = [
   {
     q: 'Quais são os métodos de entrega disponíveis?',
-    a: 'Em Luanda, entregamos em 24 a 48 horas úteis. Para as restantes províncias, a entrega é feita por transportadora em 3 a 7 dias úteis. Os prazos são indicados no checkout.',
+    a: 'Produtos digitais são entregues instantaneamente após a confirmação do pagamento. Produtos físicos têm prazo mínimo de 24 horas, conforme o destino e a disponibilidade.',
   },
   {
     q: 'Como posso acompanhar a minha encomenda?',
@@ -271,7 +271,7 @@ export const FAQ_QUICK = [
 export const FAQ_ACCORDION = [
   {
     q: 'Quanto tempo demora a entrega?',
-    a: 'As entregas em Luanda demoram normalmente entre 24 e 48 horas úteis. Fora de Luanda, o prazo depende da transportadora e pode variar entre 3 e 7 dias úteis. Receberá uma notificação quando a encomenda for expedida.',
+    a: 'Produtos digitais: entrega instantânea após a confirmação do pagamento. Produtos físicos: prazo mínimo de 24 horas; a equipa GameAO contactará o cliente para combinar os detalhes.',
   },
   {
     q: 'Como acompanho a minha encomenda?',

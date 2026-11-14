@@ -2,7 +2,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { getPool } from './db';
 
 export type OrderStatus = 'awaiting_payment' | 'payment_verification' | 'payment_confirmed' | 'processing' | 'ready_for_delivery' | 'completed' | 'cancelled' | 'refunded';
-export type NotificationChannel = 'email' | 'whatsapp' | 'in_app';
+export type NotificationChannel = 'email' | 'whatsapp' | 'sms' | 'in_app';
 export type DeliveryStatus = 'sent' | 'failed' | 'not_configured' | 'skipped';
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {
@@ -65,7 +65,7 @@ export type DispatchResult = Partial<Record<NotificationChannel, DeliveryStatus>
 
 let cachedSiteConfig: { value: SiteConfig; expires: number } | null = null;
 interface SiteConfig { name: string; email: string; phone: string; whatsapp: string; location: string; supportHours?: string; tagline?: string }
-const DEFAULT_SITE: SiteConfig = { name: 'GameAO', email: 'geral@gameao.shop', phone: '973 929 712', whatsapp: '244973929712', location: 'Luanda, Angola', tagline: 'A sua loja de videojogos em Angola' };
+const DEFAULT_SITE: SiteConfig = { name: 'GameAO', email: 'geral@gameao.shop', phone: '973 929 712', whatsapp: '244973929712', location: 'Luanda, Angola', tagline: 'A sua loja de videojogos em Angola.' };
 
 export function publicSiteUrl(): string {
   const configured = process.env.PUBLIC_SITE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
@@ -73,12 +73,14 @@ export function publicSiteUrl(): string {
 }
 
 export function emailConfigured(): boolean {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_FROM);
+  return Boolean((process.env.SMTP_HOST || process.env.EMAIL_HOST) && (process.env.SMTP_USER || process.env.EMAIL_USER) && (process.env.SMTP_FROM || process.env.EMAIL_FROM) && (process.env.SMTP_PASSWORD || process.env.EMAIL_PASS));
 }
 
 export function whatsappConfigured(): boolean {
   return Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
 }
+
+export function smsConfigured(): boolean { return Boolean(process.env.TELCOSMS_API_KEY); }
 
 export async function getSiteConfig(): Promise<SiteConfig> {
   if (cachedSiteConfig && cachedSiteConfig.expires > Date.now()) return cachedSiteConfig.value;
@@ -98,7 +100,7 @@ export function invalidateSiteConfigCache(): void { cachedSiteConfig = null; }
 
 export function formatAoa(value: number | string | null | undefined): string {
   const amount = Number(value ?? 0);
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(amount) ? amount : 0);
+  return `${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(amount) ? amount : 0)} Kz`;
 }
 
 function escapeHtml(value: string): string {
@@ -129,10 +131,10 @@ let transporter: Transporter | null = null;
 function getTransporter(): Transporter {
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+      host: process.env.SMTP_HOST || process.env.EMAIL_HOST,
+      port: Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587),
+      secure: (process.env.SMTP_SECURE || process.env.EMAIL_SECURE) === 'true',
+      auth: (process.env.SMTP_USER || process.env.EMAIL_USER) ? { user: process.env.SMTP_USER || process.env.EMAIL_USER, pass: process.env.SMTP_PASSWORD || process.env.EMAIL_PASS } : undefined,
     });
   }
   return transporter;
@@ -185,7 +187,7 @@ async function sendEmail(input: { eventKey: string; to: string; subject: string;
   }
   try {
     const info = await getTransporter().sendMail({
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_FROM || process.env.EMAIL_FROM || input.site.email,
       to: input.to,
       subject: input.subject,
       text: input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
@@ -221,6 +223,25 @@ async function sendWhatsApp(input: { eventKey: string; to: string; body: string;
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Falha no envio WhatsApp.';
     await logDelivery({ eventKey: input.eventKey, channel: 'whatsapp', recipient: phone, status: 'failed', error: reason, userId: input.userId, orderId: input.orderId });
+    return 'failed';
+  }
+}
+
+async function sendSms(input: { eventKey: string; to: string; body: string; userId?: number | null; orderId?: number | null }): Promise<DeliveryStatus> {
+  const phone = normalizePhone(input.to);
+  if (!phone) return 'skipped';
+  if (!smsConfigured()) {
+    await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'not_configured', error: 'TelcoSMS não configurado.', userId: input.userId, orderId: input.orderId });
+    return 'not_configured';
+  }
+  try {
+    const message = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    const result = await fetch('https://www.telcosms.co.ao/send_message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { api_key_app: process.env.TELCOSMS_API_KEY, phone_number: phone, message_body: message } }) });
+    if (!result.ok) throw new Error(`TelcoSMS HTTP ${result.status}`);
+    await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'sent', userId: input.userId, orderId: input.orderId });
+    return 'sent';
+  } catch (error) {
+    await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'failed', error: error instanceof Error ? error.message : 'Falha no envio SMS.', userId: input.userId, orderId: input.orderId });
     return 'failed';
   }
 }
@@ -294,12 +315,20 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     reset_minutes: '60',
     ...input.variables,
   };
-  const channels: NotificationChannel[] = input.channels ?? (isAdminEvent ? ['in_app', 'email'] : ['email', 'whatsapp', 'in_app']);
+  const channels: NotificationChannel[] = input.channels ?? (isAdminEvent ? ['in_app', 'email'] : ['email', 'whatsapp', 'sms', 'in_app']);
   const prefs = await userPreferences(user?.id);
   const result: DispatchResult = {};
   const orderId = input.order?.id ?? null;
 
   for (const channel of channels) {
+    if (channel === 'sms') {
+      const recipient = user?.phone ?? '';
+      if (!recipient) { result.sms = 'skipped'; continue; }
+      const smsTemplate = await getTemplate(input.eventKey, 'whatsapp') ?? await getTemplate(input.eventKey, 'email');
+      if (!smsTemplate) { result.sms = 'skipped'; continue; }
+      result.sms = await sendSms({ eventKey: input.eventKey, to: recipient, body: renderTemplate(smsTemplate.body, variables), userId: user?.id, orderId });
+      continue;
+    }
     const template = await getTemplate(input.eventKey, channel);
     if (!template) { result[channel] = 'skipped'; continue; }
     const subject = renderTemplate(template.subject, variables);
@@ -355,14 +384,14 @@ export async function notifyOrderStatusChanged(order: NotificationOrder, status:
     eventKey,
     order: { ...order, status },
     variables: { ...extras },
-    channels: ['email', 'whatsapp', 'in_app'],
+    channels: ['email', 'whatsapp', 'sms', 'in_app'],
   });
 }
 
 export async function notifyOrderCreated(order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string }> }, paymentInstructions = ''): Promise<DispatchResult> {
   const variables = orderVariables(order);
   variables.payment_instructions = paymentInstructions ? `<p>${escapeHtml(paymentInstructions)}</p>` : '';
-  const result = await dispatch({ eventKey: 'order.created', order, variables, channels: ['email', 'whatsapp', 'in_app'] });
+  const result = await dispatch({ eventKey: 'order.created', order, variables, channels: ['email', 'whatsapp', 'sms', 'in_app'] });
   await dispatch({ eventKey: 'admin.new_order', order, variables, channels: ['in_app', 'email'], entityType: 'shop_order', entityId: order.order_number });
   return result;
 }
@@ -375,7 +404,7 @@ export async function notifyPaymentProofSubmitted(order: NotificationOrder): Pro
 
 export async function notifyPaymentReview(order: NotificationOrder, action: 'approve' | 'reject' | 'request_new', note?: string | null): Promise<DispatchResult> {
   const eventKey = action === 'approve' ? 'order.payment_confirmed' : action === 'reject' ? 'order.payment_rejected' : 'order.payment_proof_requested';
-  return dispatch({ eventKey, order: { ...order, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment' }, variables: { admin_note: note ?? '' }, channels: ['email', 'whatsapp', 'in_app'] });
+  return dispatch({ eventKey, order: { ...order, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment' }, variables: { admin_note: note ?? '' }, channels: ['email', 'whatsapp', 'sms', 'in_app'] });
 }
 
 export async function notifyUserWelcome(user: NotificationUser): Promise<DispatchResult> {

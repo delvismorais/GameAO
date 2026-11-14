@@ -5,6 +5,7 @@ import type { AdminSectionId } from './adminNav';
 type Integrations = {
   email: { configured: boolean; host: string; from: string };
   whatsapp: { configured: boolean; phoneNumberId: string; version: string };
+  sms: { configured: boolean; provider: string };
   storage: { configured: boolean; bucket: string };
   freefire: { configured: boolean; provider: string };
   openai: { configured: boolean };
@@ -33,16 +34,16 @@ export function AdminIntegrations({ section }: { section: AdminSectionId | 'dash
     <p className="admin-note">O upload usa URLs pré-assinadas; o navegador nunca recebe as chaves do R2. Os comprovativos são servidos por links temporários.</p>
   </AdminSection>;
   if (section === 'apis') return <AdminSection title="APIs externas" subtitle="Integrações opcionais usadas pelo backend.">
-    <div className="admin-kpis admin-kpis--compact"><article><span>OpenAI (gerador de emails)</span><strong>{data?.openai.configured ? 'Configurado' : 'Opcional'}</strong><small>OPENAI_API_KEY</small></article><article><span>Verificação Free Fire</span><strong>{data?.freefire.configured ? 'Configurado' : 'Não configurado'}</strong><small>FREEFIRE_VERIFY_URL</small></article><article><span>URL pública</span><strong>{data?.publicUrl}</strong><small>PUBLIC_SITE_URL</small></article></div>
+    <div className="admin-kpis admin-kpis--compact"><article><span>OpenAI (gerador de emails)</span><strong>{data?.openai.configured ? 'Configurado' : 'Opcional'}</strong><small>OPENAI_API_KEY</small></article><article><span>Verificação Free Fire</span><strong>{data?.freefire.configured ? 'Configurado' : 'Não configurado'}</strong><small>RAPIDAPI_KEY · RAPIDAPI_HOST</small></article><article><span>URL pública</span><strong>{data?.publicUrl}</strong><small>PUBLIC_SITE_URL</small></article></div>
   </AdminSection>;
   if (section === 'email-integration') return <AdminSection title="Serviço de email" subtitle="Emails transacionais com a identidade GameAO.">
-    <IntegrationCard title="SMTP" configured={data?.email.configured ?? false} details={[`Servidor: ${data?.email.host || '—'}`, `Remetente: ${data?.email.from || '—'}`]} vars={['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM', 'SMTP_SECURE']} />
+    <IntegrationCard title="SMTP / Zoho" configured={data?.email.configured ?? false} details={[`Servidor: ${data?.email.host || '—'}`, `Remetente: ${data?.email.from || '—'}`]} vars={['SMTP_HOST ou EMAIL_HOST', 'SMTP_PORT ou EMAIL_PORT', 'SMTP_USER ou EMAIL_USER', 'SMTP_PASSWORD ou EMAIL_PASS', 'SMTP_FROM ou EMAIL_FROM']} />
   </AdminSection>;
   if (section === 'whatsapp') return <AdminSection title="WhatsApp Business" subtitle="Notificações de encomendas por WhatsApp.">
     <IntegrationCard title="WhatsApp Cloud API" configured={data?.whatsapp.configured ?? false} details={[`Phone Number ID: ${data?.whatsapp.phoneNumberId || '—'}`, `Versão: ${data?.whatsapp.version || '—'}`]} vars={['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_API_VERSION']} />
   </AdminSection>;
   return <AdminSection title="Integrações" subtitle="Estado real das ligações do backend.">
-    <div className="admin-kpis admin-kpis--compact"><article><span>Email SMTP</span><strong>{data?.email.configured ? 'Ativo' : 'Pendente'}</strong><small>{data?.email.host || 'SMTP_HOST'}</small></article><article><span>WhatsApp</span><strong>{data?.whatsapp.configured ? 'Ativo' : 'Pendente'}</strong><small>Cloud API</small></article><article><span>Cloudflare R2</span><strong>{data?.storage.configured ? 'Ativo' : 'Pendente'}</strong><small>{data?.storage.bucket || 'R2_BUCKET'}</small></article><article><span>Free Fire</span><strong>{data?.freefire.configured ? 'Ativo' : 'Opcional'}</strong><small>verificação de ID</small></article><article><span>OpenAI</span><strong>{data?.openai.configured ? 'Ativo' : 'Opcional'}</strong><small>gerador de emails</small></article></div>
+    <div className="admin-kpis admin-kpis--compact"><article><span>Email SMTP</span><strong>{data?.email.configured ? 'Ativo' : 'Pendente'}</strong><small>{data?.email.host || 'SMTP_HOST / EMAIL_HOST'}</small></article><article><span>WhatsApp</span><strong>{data?.whatsapp.configured ? 'Ativo' : 'Pendente'}</strong><small>Cloud API</small></article><article><span>SMS</span><strong>{data?.sms.configured ? 'Ativo' : 'Pendente'}</strong><small>{data?.sms.provider || 'TELCOSMS_API_KEY'}</small></article><article><span>Cloudflare R2</span><strong>{data?.storage.configured ? 'Ativo' : 'Pendente'}</strong><small>{data?.storage.bucket || 'R2_BUCKET'}</small></article><article><span>Free Fire</span><strong>{data?.freefire.configured ? 'Ativo' : 'Opcional'}</strong><small>verificação de ID</small></article><article><span>OpenAI</span><strong>{data?.openai.configured ? 'Ativo' : 'Opcional'}</strong><small>gerador de emails</small></article></div>
   </AdminSection>;
 }
 
