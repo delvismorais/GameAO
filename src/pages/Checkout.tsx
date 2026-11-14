@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageShell } from '../components/layout/PageShell';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -18,6 +18,7 @@ const PROVINCES = [
 
 const COUNTRIES = ['Angola', 'Portugal', 'Brasil', 'África do Sul', 'Namíbia', 'República Democrática do Congo', 'Zâmbia'];
 
+type PaymentMethod = { id: number; code: string; name: string; description: string; instructions: string; requires_proof: number; customer_message: string };
 const EMPTY_CUSTOMER: Customer = {
   firstName: '', lastName: '', company: '', country: 'Angola', address: '', apartment: '',
   city: '', province: 'Luanda', postalCode: '', phone: '', email: '', notes: '',
@@ -36,6 +37,9 @@ export function Checkout() {
     phone: user?.phone ?? '',
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  useEffect(() => { void fetch('/api/payment-methods').then((response) => response.ok ? response.json() : { methods: [] }).then((data: { methods?: PaymentMethod[] }) => setPaymentMethods(data.methods ?? [])); }, []);
 
   const totalUsd = cartSubtotalUsd - cartDiscountUsd;
 
@@ -82,7 +86,7 @@ export function Checkout() {
     }
     const response = await fetch('/api/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ rate, customer, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty })) }),
+      body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty })) }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => null) as { message?: string } | null;
@@ -218,11 +222,11 @@ export function Checkout() {
 
           <div className="payment-box">
             <h3>Método de pagamento</h3>
-            <p className="payment-box__note">Pagamento online ainda não configurado. A encomenda será criada como pendente.</p>
-            <p className="payment-box__note">
-              A taxa aplicada é {formatUsdAsAoa(rate, 1)} por 1 USD. O total final fica registado
-              com esta taxa.
-            </p>
+            {paymentMethods.length > 0 ? <>
+              <label className="field"><span>Escolha uma modalidade</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="">Selecionar depois</option>{paymentMethods.map((method) => <option key={method.code} value={method.code}>{method.name}</option>)}</select></label>
+              {paymentMethod && <p className="payment-box__note">{paymentMethods.find((method) => method.code === paymentMethod)?.customer_message}</p>}
+            </> : <p className="payment-box__note">Os métodos de pagamento estão a ser configurados pela GameAO. A encomenda será criada como pendente.</p>}
+            <p className="payment-box__note">A taxa aplicada é {formatUsdAsAoa(rate, 1)} por 1 USD. O total final fica registado com esta taxa.</p>
           </div>
 
           <p className="order-summary__privacy">

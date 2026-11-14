@@ -64,7 +64,7 @@ function parseArrayValue(value: unknown): string[] {
 
 async function readCatalogProducts(includeInactive = false) {
   const [rows] = await getPool().query<any[]>(
-    `SELECT p.*, GROUP_CONCAT(c.slug ORDER BY c.slug SEPARATOR ',') AS category_slugs
+    `SELECT p.*, STRING_AGG(c.slug, ',' ORDER BY c.slug) AS category_slugs
        FROM catalog_products p
        LEFT JOIN catalog_product_categories pc ON pc.product_id = p.id
        LEFT JOIN catalog_categories c ON c.id = pc.category_id
@@ -210,6 +210,32 @@ async function findOrder(orderNumber: string) {
 
 function chooseInvoiceTemplate(value: unknown): InvoiceTemplate { return value === 'modern' ? 'modern' : 'classic'; }
 
+app.get('/api/payment-methods', asyncRoute(async (_request, response) => {
+  if (!requireDatabase(response)) return;
+  const [rows] = await getPool().query<any[]>(`SELECT id, code, name, description, logo_url, receiving_data_json, instructions, requires_proof, payment_deadline_hours, customer_message FROM payment_methods WHERE is_active = 1 ORDER BY sort_order ASC, name ASC`);
+  response.json({ methods: rows.map((row) => ({ ...row, receiving_data: typeof row.receiving_data_json === 'string' ? JSON.parse(row.receiving_data_json) : row.receiving_data_json })) });
+}));
+app.get('/api/admin/payment-methods', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const user = await requireAdmin(request, response);
+  if (!user) return;
+  const [rows] = await getPool().query<any[]>(`SELECT * FROM payment_methods ORDER BY sort_order ASC, name ASC`);
+  response.json({ methods: rows.map((row) => ({ ...row, receiving_data: typeof row.receiving_data_json === 'string' ? JSON.parse(row.receiving_data_json) : row.receiving_data_json })) });
+}));
+app.put('/api/admin/payment-methods/:id', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const user = await requireAdmin(request, response);
+  if (!user) return;
+  const id = Number(request.params.id);
+  const body = request.body ?? {};
+  const allowed = { name: body.name, description: body.description, instructions: body.instructions, receiving_data_json: body.receiving_data == null ? undefined : JSON.stringify(body.receiving_data), is_active: body.is_active ? 1 : 0, requires_proof: body.requires_proof ? 1 : 0, sort_order: Number(body.sort_order ?? 0), payment_deadline_hours: Number(body.payment_deadline_hours ?? 24), customer_message: body.customer_message };
+  const fields = Object.entries(allowed).filter(([, value]) => value !== undefined);
+  if (!fields.length) { response.status(400).json({ error: 'empty_update', message: 'Nenhuma definição foi alterada.' }); return; }
+  await getPool().execute(`UPDATE payment_methods SET ${fields.map(([key]) => `\`${key}\` = ?`).join(', ')}, updated_at = NOW() WHERE id = ?`, [...fields.map(([, value]) => value), id]);
+  await recordAudit(user.id, 'payment_method.update', 'payment_method', String(id), { fields: fields.map(([key]) => key) });
+  const [[method]] = await getPool().query<any[]>(`SELECT * FROM payment_methods WHERE id = ? LIMIT 1`, [id]);
+  response.json({ method });
+}));
 app.post('/api/orders', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const body = request.body ?? {};
@@ -219,6 +245,13 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     response.status(400).json({ error: 'invalid_order', message: 'Dados do cliente e produtos da encomenda são obrigatórios.' }); return;
   }
   const user = await getAuthenticatedUser(request);
+  const paymentMethodCode = typeof body.paymentMethod === 'string' ? body.paymentMethod.trim() : '';
+  let paymentMethod: any = null;
+  if (paymentMethodCode) {
+    const [[selectedMethod]] = await getPool().query<any[]>(`SELECT id, code, name, requires_proof FROM payment_methods WHERE code = ? AND is_active = 1 LIMIT 1`, [paymentMethodCode]);
+    if (!selectedMethod) { response.status(400).json({ error: 'invalid_payment_method', message: 'O método de pagamento selecionado não está disponível.' }); return; }
+    paymentMethod = selectedMethod;
+  }
   const [settingRows] = await getPool().query<any[]>(`SELECT value_json FROM site_settings WHERE setting_key = 'exchange_rate' LIMIT 1`);
   const rawSetting = settingRows[0]?.value_json;
   const setting = typeof rawSetting === 'string' ? JSON.parse(rawSetting) : rawSetting;
@@ -237,7 +270,7 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     }
     if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
-    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', NULL, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, subtotal, subtotal, rate, customer.notes ?? null]);
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, subtotal, subtotal, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null]);
     const orderId = Number(insert.insertId);
     const orderNumber = `GA${orderId}`;
     await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);

@@ -13,7 +13,8 @@ type Overview = {
 };
 type AdminProduct = { id: string; name: string; slug: string; basePriceUsd: number; salePriceUsd?: number; isActive: boolean; image: string };
 type AdminOrder = { order_number: string; customer_name: string; customer_email: string; total_aoa: number; status: string; payment_status: string; created_at: string; item_count: number };
-type AdminTab = 'dashboard' | 'orders' | 'products' | 'settings';
+type PaymentMethod = { id: number; code: string; name: string; description: string; instructions: string; is_active: number; requires_proof: number; payment_deadline_hours: number; customer_message: string; receiving_data_json?: unknown };
+type AdminTab = 'dashboard' | 'orders' | 'products' | 'payments' | 'settings';
 
 const ORDER_STATUS_OPTIONS = [
   ['awaiting_payment', 'A aguardar pagamento'], ['payment_confirmed', 'Pagamento confirmado'], ['processing', 'Em processamento'],
@@ -27,6 +28,7 @@ export function Admin() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -37,14 +39,15 @@ export function Admin() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [overviewResponse, productsResponse, ordersResponse] = await Promise.all([
-      fetch('/api/admin/overview', { credentials: 'include' }), fetch('/api/admin/products', { credentials: 'include' }), fetch('/api/admin/orders', { credentials: 'include' }),
+    const [overviewResponse, productsResponse, ordersResponse, paymentMethodsResponse] = await Promise.all([
+      fetch('/api/admin/overview', { credentials: 'include' }), fetch('/api/admin/products', { credentials: 'include' }), fetch('/api/admin/orders', { credentials: 'include' }), fetch('/api/admin/payment-methods', { credentials: 'include' }),
     ]);
     if ([overviewResponse, productsResponse, ordersResponse].some((response) => response.status === 403)) { setForbidden(true); setLoading(false); return; }
     if (overviewResponse.ok && productsResponse.ok && ordersResponse.ok) {
       setOverview(await overviewResponse.json() as Overview);
       setProducts((await productsResponse.json() as { products: AdminProduct[] }).products);
       setOrders((await ordersResponse.json() as { orders: AdminOrder[] }).orders);
+      if (paymentMethodsResponse.ok) setPaymentMethods((await paymentMethodsResponse.json() as { methods: PaymentMethod[] }).methods);
       setForbidden(false);
     }
     setLoading(false);
@@ -62,6 +65,10 @@ export function Admin() {
   const toggleProduct = async (product: AdminProduct) => {
     const response = await fetch(`/api/admin/products/${encodeURIComponent(product.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ isActive: !product.isActive }) });
     if (response.ok) await load();
+  };
+  const updatePaymentMethod = async (method: PaymentMethod, patch: Partial<PaymentMethod>) => {
+    const response = await fetch(`/api/admin/payment-methods/${method.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(patch) });
+    if (response.ok) { setPaymentMethods((current) => current.map((item) => item.id === method.id ? { ...item, ...patch } : item)); setMessage(`${method.name} atualizado.`); } else setMessage('Não foi possível atualizar o método de pagamento.');
   };
   const updateOrderStatus = async (order: AdminOrder, status: string) => {
     const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.order_number)}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status }) });
@@ -83,7 +90,7 @@ export function Admin() {
   if (forbidden) return <PageShell crumbs={[{ label: 'Administração' }]}><div className="admin-empty"><h1 className="page-title">Administração</h1><p>Esta área requer uma conta administrativa autorizada.</p><Link to="/my-account" className="btn btn--primary">Iniciar sessão</Link></div></PageShell>;
 
   const navItems: Array<{ id: AdminTab; label: string; icon: 'category' | 'cart' | 'clock' }> = [
-    { id: 'dashboard', label: 'Visão geral', icon: 'category' }, { id: 'orders', label: 'Pedidos e faturas', icon: 'cart' }, { id: 'products', label: 'Produtos', icon: 'category' }, { id: 'settings', label: 'Configuração', icon: 'clock' },
+    { id: 'dashboard', label: 'Visão geral', icon: 'category' }, { id: 'orders', label: 'Pedidos e faturas', icon: 'cart' }, { id: 'products', label: 'Produtos', icon: 'category' }, { id: 'payments', label: 'Pagamentos', icon: 'cart' }, { id: 'settings', label: 'Configuração', icon: 'clock' },
   ];
   const orderList = (compact = false) => (
     <div className="admin-products-table">
@@ -116,6 +123,7 @@ export function Admin() {
           </>}
           {activeTab === 'orders' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Pedidos e faturas</h2><p className="admin-card__subhead">Altere o estado do pedido e descarregue um dos modelos de fatura.</p></div><span>{orders.length} registos</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}{orderList()}</section>}
           {activeTab === 'products' && <div className="admin-grid admin-products-grid"><section className="admin-card"><div className="admin-card__head"><h2>Novo produto</h2><span>Preço-base em USD</span></div><form className="admin-form" onSubmit={createProduct}><label className="field"><span>Nome *</span><input required value={form.name} onChange={(event) => updateForm('name', event.target.value)} /></label><label className="field"><span>Slug *</span><input required value={form.slug} onChange={(event) => updateForm('slug', event.target.value)} placeholder="nome-do-produto" /></label><div className="form-row"><label className="field"><span>Preço USD *</span><input required type="number" min="0" step="0.01" value={form.basePriceUsd} onChange={(event) => updateForm('basePriceUsd', event.target.value)} /></label><label className="field"><span>Promoção USD</span><input type="number" min="0" step="0.01" value={form.salePriceUsd} onChange={(event) => updateForm('salePriceUsd', event.target.value)} /></label></div><label className="field"><span>Plataforma</span><input value={form.platform} onChange={(event) => updateForm('platform', event.target.value)} placeholder="PC, Xbox, PlayStation" /></label><label className="field"><span>Descrição curta</span><textarea rows={3} value={form.shortDescription} onChange={(event) => updateForm('shortDescription', event.target.value)} /></label><button type="submit" className="btn btn--primary">Criar produto</button>{message && <p className="admin-message">{message}</p>}</form></section><section className="admin-card admin-card--wide"><div className="admin-card__head"><h2>Catálogo</h2><span>{products.length} registos</span></div><div className="admin-products-table">{products.map((product) => <article key={product.id} className={!product.isActive ? 'is-inactive' : ''}><img src={product.image} alt="" /><div><strong>{product.name}</strong><small>{product.slug} · {product.isActive ? 'Ativo' : 'Inativo'}</small></div><span>{formatUsdAsAoa(product.salePriceUsd ?? product.basePriceUsd, rate)}</span><button type="button" className="btn btn--outline btn--sm" onClick={() => void toggleProduct(product)}>{product.isActive ? 'Desativar' : 'Ativar'}</button></article>)}</div></section></div>}
+          {activeTab === 'payments' && <section className="admin-card admin-orders-card"><div className="admin-card__head"><div><h2>Métodos de pagamento</h2><p className="admin-card__subhead">Configure apenas dados próprios da GameAO. Métodos novos ficam desativados até serem revistos.</p></div><span>{paymentMethods.filter((method) => method.is_active).length} ativos</span></div>{message && <p className="admin-message admin-message--banner">{message}</p>}<div className="admin-products-table">{paymentMethods.map((method) => <article key={method.id}><div><strong>{method.name}</strong><small>{method.code} · {method.requires_proof ? 'exige comprovativo' : 'sem comprovativo'}</small></div><label className="admin-order-status"><span>Ativo</span><input type="checkbox" checked={Boolean(method.is_active)} onChange={(event) => void updatePaymentMethod(method, { is_active: event.target.checked ? 1 : 0 })} /></label><button type="button" className="btn btn--outline btn--sm" onClick={() => { const instructions = window.prompt('Instruções de pagamento da GameAO:', method.instructions); if (instructions !== null) void updatePaymentMethod(method, { instructions }); }}>Editar instruções</button></article>)}</div></section>}
           {activeTab === 'settings' && <section className="admin-card admin-settings-card"><div className="admin-card__head"><div><h2>Configuração da loja</h2><p className="admin-card__subhead">Estas definições são internas e não aparecem na navegação pública.</p></div></div><form className="admin-form admin-settings-form" onSubmit={saveRate}><label className="field"><span>1 USD em Kz *</span><input required type="number" min="0.01" step="0.01" value={rateDraft} onChange={(event) => setRateDraft(event.target.value)} /></label><label className="field"><span>Fonte / referência</span><input value={rateSource} onChange={(event) => setRateSource(event.target.value)} /></label><p className="admin-message">Valor atual: {formatUsdAsAoa(1, rate)} por USD. O preço dos produtos, carrinho e checkout acompanha esta taxa.</p><button type="submit" className="btn btn--primary">Guardar configuração</button>{message && <p className="admin-message admin-message--banner">{message}</p>}</form></section>}
         </>}
       </main>
