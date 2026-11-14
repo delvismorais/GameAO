@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
+import nodemailer from 'nodemailer';
 import type { ViteDevServer } from 'vite';
 import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
@@ -243,6 +244,38 @@ app.get('/api/catalog/status', asyncRoute(async (_request, response) => {
 app.get('/api/catalog/products', asyncRoute(async (_request, response) => {
   if (!requireDatabase(response)) return;
   response.json({ products: await readCatalogProducts(), source: 'database' });
+}));
+
+function jsonValue(value: unknown, fallback: unknown = {}) {
+  if (typeof value !== 'string') return value ?? fallback;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function postView(row: any) {
+  return { slug: row.slug, title: row.title, date: row.published_date, category: row.category, author: row.author, image: row.image_url, imageCard: row.image_card_url, imageThumb: row.image_thumb_url, excerpt: row.excerpt, tags: jsonValue(row.tags_json, []), views: Number(row.views ?? 0), commentsCount: Number(row.comments_count ?? 0), blocks: jsonValue(row.blocks_json, []), status: row.status, publishedAt: row.published_at };
+}
+
+app.get('/api/blog/posts', asyncRoute(async (_request, response) => {
+  if (!requireDatabase(response)) return;
+  const [rows] = await getPool().query<any[]>(`SELECT * FROM content_posts WHERE status = 'published' ORDER BY published_date DESC, created_at DESC LIMIT 100`);
+  response.json({ posts: rows.map(postView) });
+}));
+
+app.get('/api/blog/posts/:slug', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const [[row]] = await getPool().query<any[]>(`SELECT * FROM content_posts WHERE slug = ? AND status = 'published' LIMIT 1`, [String(request.params.slug)]);
+  if (!row) { response.status(404).json({ error: 'post_not_found', message: 'Artigo não encontrado.' }); return; }
+  await getPool().execute(`UPDATE content_posts SET views = views + 1 WHERE slug = ?`, [row.slug]);
+  response.json({ post: postView(row) });
+}));
+
+app.post('/api/marketing/subscribe', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const email = String(request.body?.email ?? '').trim().toLowerCase();
+  const name = typeof request.body?.name === 'string' ? request.body.name.trim().slice(0, 160) : null;
+  if (!validEmail(email)) { response.status(400).json({ error: 'invalid_email', message: 'Indique um email válido.' }); return; }
+  await getPool().execute(`INSERT INTO marketing_leads (email, name) VALUES (?, ?) ON CONFLICT (email) DO UPDATE SET name = COALESCE(EXCLUDED.name, marketing_leads.name), status = 'subscribed', updated_at = NOW()`, [email, name]);
+  response.status(201).json({ ok: true, message: 'Email inscrito nas novidades da GameAO.' });
 }));
 
 async function findOrder(orderNumber: string) {
@@ -686,6 +719,95 @@ app.get('/api/admin/status', asyncRoute(async (request, response) => {
   }
   const [rows] = await getPool().query(`SELECT role, COUNT(*) AS count FROM app_users GROUP BY role`);
   response.json({ ok: true, user, usersByRole: rows });
+}));
+
+app.get('/api/admin/content/posts', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  if (!await requireAdmin(request, response)) return;
+  const status = String(request.query.status ?? '').trim();
+  const [rows] = await getPool().query<any[]>(`SELECT * FROM content_posts ${status ? 'WHERE status = ?' : ''} ORDER BY published_date DESC, created_at DESC LIMIT 200`, status ? [status] : []);
+  response.json({ posts: rows.map(postView) });
+}));
+
+app.post('/api/admin/content/posts', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response); if (!admin) return;
+  const body = request.body ?? {};
+  const slug = String(body.slug ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '').slice(0, 200);
+  const title = String(body.title ?? '').trim();
+  if (!slug || !title) { response.status(400).json({ error: 'invalid_post', message: 'Título e slug são obrigatórios.' }); return; }
+  const date = String(body.date ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const image = String(body.image ?? '/assets/blog/post-1.jpg');
+  const status = ['draft', 'published', 'archived'].includes(String(body.status)) ? String(body.status) : 'draft';
+  await getPool().execute(`INSERT INTO content_posts (slug, title, published_date, category, author, image_url, image_card_url, image_thumb_url, excerpt, tags_json, blocks_json, status, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [slug, title, date, String(body.category ?? 'Notícias'), String(body.author ?? admin.name), image, String(body.imageCard ?? image), String(body.imageThumb ?? image), String(body.excerpt ?? ''), JSON.stringify(Array.isArray(body.tags) ? body.tags : []), JSON.stringify(Array.isArray(body.blocks) ? body.blocks : [{ type: 'p', text: String(body.content ?? '') }]), status, status === 'published' ? new Date() : null]);
+  await recordAudit(admin.id, 'content.post.create', 'content_post', slug, { title, status });
+  response.status(201).json({ ok: true, slug });
+}));
+
+app.put('/api/admin/content/posts/:slug', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response); if (!admin) return;
+  const body = request.body ?? {}; const fields: Array<[string, unknown]> = [];
+  const allowed: Record<string, string> = { title: 'title', publishedDate: 'published_date', category: 'category', author: 'author', image: 'image_url', imageCard: 'image_card_url', imageThumb: 'image_thumb_url', excerpt: 'excerpt', status: 'status' };
+  for (const [input, column] of Object.entries(allowed)) if (input in body) fields.push([column, body[input]]);
+  if ('tags' in body) fields.push(['tags_json', JSON.stringify(Array.isArray(body.tags) ? body.tags : [])]);
+  if ('blocks' in body) fields.push(['blocks_json', JSON.stringify(Array.isArray(body.blocks) ? body.blocks : [])]);
+  if (fields.some(([column, value]) => column === 'status' && value === 'published')) fields.push(['published_at', new Date()]);
+  if (!fields.length) { response.status(400).json({ error: 'empty_update', message: 'Nenhum campo foi alterado.' }); return; }
+  await getPool().execute(`UPDATE content_posts SET ${fields.map(([column]) => `"${column}" = ?`).join(', ')}, updated_at = NOW() WHERE slug = ?`, [...fields.map(([, value]) => value), String(request.params.slug)]);
+  await recordAudit(admin.id, 'content.post.update', 'content_post', String(request.params.slug), { fields: fields.map(([column]) => column) });
+  response.json({ ok: true });
+}));
+
+app.delete('/api/admin/content/posts/:slug', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response); if (!admin) return;
+  await getPool().execute(`UPDATE content_posts SET status = 'archived', updated_at = NOW() WHERE slug = ?`, [String(request.params.slug)]);
+  await recordAudit(admin.id, 'content.post.archive', 'content_post', String(request.params.slug));
+  response.status(204).end();
+}));
+
+app.get('/api/admin/banners', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return;
+  const [banners] = await getPool().query<any[]>(`SELECT * FROM site_banners ORDER BY sort_order ASC, created_at DESC LIMIT 100`); response.json({ banners });
+}));
+app.post('/api/admin/banners', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return;
+  const body = request.body ?? {}; const slug = String(body.slug ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 160); const title = String(body.title ?? '').trim();
+  if (!slug || !title || !String(body.image ?? '').trim()) { response.status(400).json({ error: 'invalid_banner', message: 'Slug, título e imagem são obrigatórios.' }); return; }
+  await getPool().execute(`INSERT INTO site_banners (slug, title, description, image_url, button_label, href, variant, sort_order, is_active, starts_at, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [slug, title, body.description ?? null, body.image, body.buttonLabel ?? null, body.href ?? null, body.variant ?? 'homepage', Number(body.sortOrder ?? 0), body.isActive === false ? 0 : 1, body.startsAt || null, body.endsAt || null]);
+  await recordAudit(admin.id, 'content.banner.create', 'site_banner', slug); response.status(201).json({ ok: true, slug });
+}));
+app.put('/api/admin/banners/:id', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return;
+  const body = request.body ?? {}; const fields: Array<[string, unknown]> = []; const allowed: Record<string, string> = { title: 'title', description: 'description', image: 'image_url', buttonLabel: 'button_label', href: 'href', variant: 'variant', sortOrder: 'sort_order', isActive: 'is_active', startsAt: 'starts_at', endsAt: 'ends_at' };
+  for (const [input, column] of Object.entries(allowed)) if (input in body) fields.push([column, input === 'isActive' ? (body[input] ? 1 : 0) : body[input]]);
+  if (!fields.length) { response.status(400).json({ error: 'empty_update', message: 'Nenhum campo foi alterado.' }); return; }
+  await getPool().execute(`UPDATE site_banners SET ${fields.map(([column]) => `"${column}" = ?`).join(', ')}, updated_at = NOW() WHERE id = ?`, [...fields.map(([, value]) => value), Number(request.params.id)]); await recordAudit(admin.id, 'content.banner.update', 'site_banner', String(request.params.id)); response.json({ ok: true });
+}));
+
+app.get('/api/banners', asyncRoute(async (_request, response) => { if (!requireDatabase(response)) return; const [banners] = await getPool().query<any[]>(`SELECT * FROM site_banners WHERE is_active = 1 ORDER BY sort_order ASC LIMIT 30`); response.json({ banners }); }));
+
+app.get('/api/admin/marketing/leads', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [leads] = await getPool().query<any[]>(`SELECT id, email, name, source, status, tags_json, created_at, updated_at FROM marketing_leads ORDER BY created_at DESC LIMIT 500`); response.json({ leads }); }));
+app.patch('/api/admin/marketing/leads/:id', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const status = ['subscribed', 'unsubscribed', 'bounced'].includes(String(request.body?.status)) ? String(request.body.status) : ''; if (!status) { response.status(400).json({ error: 'invalid_status', message: 'Estado de lead inválido.' }); return; } await getPool().execute(`UPDATE marketing_leads SET status = ?, updated_at = NOW() WHERE id = ?`, [status, Number(request.params.id)]); await recordAudit(admin.id, 'marketing.lead.update', 'marketing_lead', String(request.params.id), { status }); response.json({ ok: true }); }));
+
+app.get('/api/admin/notifications', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [notifications] = await getPool().query<any[]>(`SELECT * FROM admin_notifications ORDER BY created_at DESC LIMIT 200`); response.json({ notifications }); }));
+app.post('/api/admin/notifications', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const title = String(request.body?.title ?? '').trim(); const message = String(request.body?.message ?? '').trim(); if (!title || !message) { response.status(400).json({ error: 'invalid_notification', message: 'Título e mensagem são obrigatórios.' }); return; } const [result] = await getPool().execute<any>(`INSERT INTO admin_notifications (title, message, level, link, created_by_user_id) VALUES (?, ?, ?, ?, ?)`, [title, message, request.body?.level ?? 'info', request.body?.link ?? null, admin.id]); await recordAudit(admin.id, 'notification.create', 'admin_notification', String(result.insertId)); response.status(201).json({ ok: true }); }));
+app.patch('/api/admin/notifications/:id/read', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; await getPool().execute(`UPDATE admin_notifications SET is_read = 1 WHERE id = ?`, [Number(request.params.id)]); response.json({ ok: true }); }));
+
+app.get('/api/admin/email/templates', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [templates] = await getPool().query<any[]>(`SELECT * FROM email_templates ORDER BY name ASC LIMIT 100`); response.json({ templates }); }));
+app.put('/api/admin/email/templates/:id', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; await getPool().execute(`UPDATE email_templates SET name = ?, subject = ?, body_html = ?, body_text = ?, is_active = ?, updated_at = NOW() WHERE id = ?`, [String(body.name ?? ''), String(body.subject ?? ''), String(body.bodyHtml ?? ''), String(body.bodyText ?? ''), body.isActive === false ? 0 : 1, Number(request.params.id)]); await recordAudit(admin.id, 'email.template.update', 'email_template', String(request.params.id)); response.json({ ok: true }); }));
+app.get('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [campaigns] = await getPool().query<any[]>(`SELECT * FROM email_campaigns ORDER BY created_at DESC LIMIT 100`); response.json({ campaigns }); }));
+app.post('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; const name = String(body.name ?? '').trim(); const subject = String(body.subject ?? '').trim(); if (!name || !subject || !String(body.bodyHtml ?? '').trim()) { response.status(400).json({ error: 'invalid_campaign', message: 'Nome, assunto e conteúdo HTML são obrigatórios.' }); return; } const [result] = await getPool().execute<any>(`INSERT INTO email_campaigns (name, subject, body_html, body_text, audience_status, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)`, [name, subject, body.bodyHtml, body.bodyText ?? '', body.audienceStatus ?? 'subscribed', admin.id]); await recordAudit(admin.id, 'email.campaign.create', 'email_campaign', String(result.insertId)); response.status(201).json({ ok: true, id: result.insertId }); }));
+app.get('/api/admin/email/status', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; response.json({ configured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_FROM), from: process.env.SMTP_FROM ? 'configurado' : 'não configurado' }); }));
+app.post('/api/admin/email/campaigns/:id/send', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return;
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_FROM) { response.status(503).json({ error: 'email_not_configured', message: 'Configure SMTP_HOST, SMTP_USER e SMTP_FROM no Render antes de enviar.' }); return; }
+  const [[campaign]] = await getPool().query<any[]>(`SELECT * FROM email_campaigns WHERE id = ? LIMIT 1`, [Number(request.params.id)]); if (!campaign) { response.status(404).json({ error: 'campaign_not_found', message: 'Campanha não encontrada.' }); return; }
+  const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = ? LIMIT 5000`, [campaign.audience_status]);
+  const transporter = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT ?? 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } });
+  let sent = 0; for (const lead of leads) { try { await transporter.sendMail({ from: process.env.SMTP_FROM, to: lead.email, subject: campaign.subject, text: campaign.body_text, html: campaign.body_html }); sent++; } catch { /* campanha continua para os restantes destinatários */ } }
+  await getPool().execute(`UPDATE email_campaigns SET status = 'sent', recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [leads.length, sent, campaign.id]); await recordAudit(admin.id, 'email.campaign.send', 'email_campaign', String(campaign.id), { recipientCount: leads.length, sentCount: sent }); response.json({ ok: true, recipientCount: leads.length, sentCount: sent });
 }));
 
 async function serveApp(): Promise<void> {

@@ -2899,9 +2899,23 @@
 .admin-products-grid { grid-template-columns:minmax(270px,.8fr) minmax(0,1.2fr); }
 .admin-toolbar { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(130px,1fr) minmax(130px,1fr); gap:8px; margin:-4px 0 16px; }
 .admin-toolbar input,.admin-toolbar select { min-height:34px; padding:7px 9px; border:1px solid #d7dde8; border-radius:4px; background:#fff; color:var(--dark); font:inherit; font-size:12px; }
+.admin-operations { display:grid; gap:18px; }
+.admin-operation-tabs { display:flex; gap:6px; flex-wrap:wrap; padding-bottom:2px; border-bottom:1px solid var(--line-light); }
+.admin-operation-tabs button { padding:10px 13px; border:1px solid var(--line-light); border-bottom:0; border-radius:4px 4px 0 0; background:#f7f8fa; color:var(--muted); font:inherit; font-size:12px; cursor:pointer; }
+.admin-operation-tabs button:hover,.admin-operation-tabs button.is-active { background:var(--primary); border-color:var(--primary); color:#fff; }
+.admin-operations-grid { display:grid; grid-template-columns:minmax(280px,.78fr) minmax(0,1.22fr); gap:22px; align-items:start; }
+.admin-card__head--spaced { margin-top:28px; }
+.admin-status--ok,.admin-status--warning { font-size:11px; font-weight:700; }
+.admin-status--ok { color:#18824b; }
+.admin-status--warning { color:#b56a00; }
+.admin-template { display:grid; gap:8px; padding:0 0 16px; margin-bottom:16px; border-bottom:1px solid var(--line-light); }
+.admin-template input,.admin-template textarea { width:100%; min-height:34px; padding:8px 10px; border:1px solid #d7dde8; border-radius:4px; font:inherit; font-size:12px; }
+.admin-template textarea { min-height:80px; }
+.admin-products-table article.is-unread { background:#fff8f2; border-left:3px solid var(--primary); padding-left:9px; }
 .admin-settings-card { max-width:720px; }
 .admin-settings-form { max-width:520px; }
 @media (max-width:900px) { .admin-shell { grid-template-columns:1fr; } .admin-nav { position:static; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; } .admin-nav__identity { grid-column:1/-1; } .admin-nav__bottom { grid-column:1/-1; display:flex; padding-top:8px; } .admin-nav__bottom a { width:auto; } }
+@media (max-width:900px) { .admin-operations-grid { grid-template-columns:1fr; } }
 @media (max-width:640px) { .admin-nav { grid-template-columns:repeat(2,minmax(0,1fr)); } .admin-nav__identity { grid-column:1/-1; } .admin-quick-grid { grid-template-columns:1fr; } }
 @media (max-width:640px) { .admin-toolbar { grid-template-columns:1fr; } }
 
