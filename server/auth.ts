@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import type { ResultSetHeader } from 'mysql2/promise';
-import { getPool, type DbRow } from './db';
+import { getPool, type DbResult, type DbRow } from './db';
 
 const SESSION_COOKIE = 'gameao_session';
 const SESSION_DAYS = 30;
@@ -71,7 +70,7 @@ export async function getAuthenticatedUser(request: Request): Promise<AuthUser |
 export async function createSession(userId: number, request: Request, response: Response): Promise<void> {
   const token = randomBytes(32).toString('hex');
   await getPool().execute(
-    `INSERT INTO app_sessions (token_hash, user_id, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
+    `INSERT INTO app_sessions (token_hash, user_id, expires_at) VALUES (?, ?, NOW() + make_interval(days => ?::int))`,
     [hashToken(token), userId, SESSION_DAYS],
   );
   setSessionCookie(response, token, request);
@@ -80,8 +79,8 @@ export async function createSession(userId: number, request: Request, response: 
 export async function registerUser(input: { email: string; password: string; name: string; phone?: string }): Promise<AuthUser> {
   const email = input.email.trim().toLowerCase();
   const passwordHash = await bcrypt.hash(input.password, 12);
-  const [result] = await getPool().execute<ResultSetHeader>(
-    `INSERT INTO app_users (email, password_hash, name, phone) VALUES (?, ?, ?, ?)`,
+  const [result] = await getPool().execute<DbResult>(
+    `INSERT INTO app_users (email, password_hash, name, phone) VALUES (?, ?, ?, ?) RETURNING id`,
     [email, passwordHash, input.name.trim(), input.phone?.trim() || null],
   );
   return { id: Number(result.insertId), email, name: input.name.trim(), phone: input.phone?.trim() || null, role: 'customer', isActive: true };

@@ -1,9 +1,12 @@
 node_modules/
 dist/
 *.tsbuildinfo
+.env
+.env.local
 test_flow.py
 test_extra.py
 shot.py
 shot2.py
 ref-notes.md
 NOTES.md
+dist-server/

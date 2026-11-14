@@ -14,7 +14,7 @@ A aparência preserva a linguagem do GameShop: tipografia Rubik, cabeçalho escu
 - Preços-base em USD convertidos para AOA/Kz através de uma taxa gerida no painel administrativo.
 - Carrinho persistente, lista de desejos e comparação de produtos.
 - Registo, login, logout e gestão de perfil com autenticação própria.
-- Checkout com criação de encomendas persistentes no MySQL.
+- Checkout com criação de encomendas persistentes no PostgreSQL.
 - Números de encomenda únicos no formato `GA` + identificador, por exemplo `GA769`.
 - Acompanhamento público da encomenda mediante número e email.
 - Faturas PDF em dois modelos: clássica e moderna.
@@ -29,8 +29,8 @@ A aparência preserva a linguagem do GameShop: tipografia Rubik, cabeçalho escu
 - Vite 7
 - TypeScript
 - Express
-- MySQL gerido
-- `mysql2`
+- PostgreSQL gerido (Render Postgres)
+- `pg`
 - `bcryptjs`
 - `pdfkit`
 - `nodemailer`
@@ -49,7 +49,7 @@ Dockerfile              Contrato de execução para produção
 
 ## Desenvolvimento local
 
-Requisitos: Node.js 20 ou superior, pnpm e uma base de dados MySQL acessível.
+Requisitos: Node.js 20 ou superior, pnpm e uma base de dados PostgreSQL acessível.
 
 ```bash
 pnpm install
@@ -61,7 +61,7 @@ A aplicação de desenvolvimento fica disponível em `http://localhost:3000`.
 
 ## Variáveis de ambiente
 
-Nunca coloque credenciais diretamente no código ou no frontend. Consulte `.env.example` para as variáveis suportadas, incluindo a ligação MySQL, sessão, SMTP e WhatsApp.
+Nunca coloque credenciais diretamente no código ou no frontend. Consulte `.env.example` para as variáveis suportadas, incluindo a ligação PostgreSQL, sessão, SMTP e WhatsApp.
 
 As credenciais de produção devem ser configuradas no ambiente de execução ou no gestor de segredos. O ficheiro `.env` local não deve ser commitado.
 
@@ -104,6 +104,33 @@ pnpm start
 
 O servidor respeita a variável `PORT` e usa `3000` como valor padrão. O endpoint `/_app/health` devolve o estado do serviço e da base de dados.
 
+## Publicação no Render
+
+A produção corre no Render com dois recursos na mesma região:
+
+- **Web Service** (Docker, `Dockerfile` na raiz) — constrói a aplicação e serve a loja, a API e as faturas.
+- **Postgres** — base de dados gerida que guarda utilizadores, catálogo, encomendas, faturas, notificações e auditoria.
+
+Variáveis obrigatórias no Web Service:
+
+| Variável | Descrição |
+| --- | --- |
+| `DATABASE_URL` | Internal Database URL do Postgres do Render |
+| `NODE_ENV` | `production` |
+| `DB_POOL_SIZE` | Ligações por instância (por exemplo `8`) |
+
+As migrações em `server/migrations` são aplicadas automaticamente no arranque e o catálogo inicial é semeado uma única vez. O endpoint de saúde para verificações do Render é `/_app/health`.
+
+Para criar o primeiro administrador, execute o comando com a ligação de produção:
+
+```bash
+DATABASE_URL="postgresql://..." \
+GAMEAO_ADMIN_EMAIL="admin@exemplo.ao" \
+GAMEAO_ADMIN_PASSWORD="uma-palavra-passe-segura" \
+GAMEAO_ADMIN_NAME="Administrador GameAO" \
+pnpm admin:init
+```
+
 ## Notas de operação
 
 A integração de pagamentos por cartão ou por fornecedor externo não é ativada sem fornecedor escolhido, credenciais protegidas e validação do fluxo. O sistema atual regista encomendas e mantém a arquitetura preparada para uma futura integração, sem armazenar dados de cartão.
@@ -113,3 +140,6 @@ As notificações por email e WhatsApp dependem das credenciais correspondentes.
 ## Licença e conteúdos
 
 Este repositório contém a implementação GameAO e os assets utilizados pelo projeto. Nomes, capas, marcas e imagens de jogos pertencem aos respetivos titulares. Verifique os direitos de utilização antes de distribuir os assets fora do ambiente autorizado.
+- Checkout com criação de encomendas persistentes no PostgreSQL.
+Requisitos: Node.js 20 ou superior, pnpm e uma base de dados PostgreSQL acessível.
+Nunca coloque credenciais diretamente no código ou no frontend. Consulte `.env.example` para as variáveis suportadas, incluindo a ligação PostgreSQL, sessão, SMTP e WhatsApp.

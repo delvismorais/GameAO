@@ -34,7 +34,7 @@
 - [x] O carrinho persiste durante a navegação e após refresh; adicionar/remover/alteração de quantidade recalcula subtotais, total e o indicador do cabeçalho imediatamente.
 - [x] `/cart` reproduz a tabela WooCommerce (produto, preço, quantidade, subtotal, remover), cupão informativo, totais e botões Continuar a Comprar / Finalizar Compra; o estado vazio é tratado.
 - [x] `/checkout` tem formulário validado (nome, apelido, empresa, país Angola, endereço, cidade, província, telefone, email, notas), resumo da encomenda e método "Pagamento na entrega (demonstração)"; não processa pagamentos reais.
-- [x] Ao confirmar, é criada uma encomenda persistente no MySQL com número único `GA` + ID auto-incremental (por exemplo `GA769`), o carrinho é limpo e surge a confirmação; a fatura fica disponível em dois modelos PDF.
+- [x] Ao confirmar, é criada uma encomenda persistente no PostgreSQL com número único `GA` + ID auto-incremental (por exemplo `GA769`), o carrinho é limpo e surge a confirmação; a fatura fica disponível em dois modelos PDF.
 - [x] A API `/api/orders` valida cliente e produtos ativos, guarda itens, preços em AOA, taxa aplicada, estado pendente e histórico inicial; a restrição UNIQUE da base impede repetição do número.
 - [x] A confirmação e `/acompanhar-pedido` permitem descarregar a fatura clássica ou moderna com dados da GameAO, cliente, produtos, imagens, preços, descontos, total, taxa e estado.
 
@@ -74,7 +74,7 @@
 
 ## 11. Fundação do backend e da base de dados
 
-- [ ] Ativar o servidor e a base de dados MySQL gerida do GameAO; a base de dados deve ser persistente e partilhada entre desenvolvimento e publicação.
+- [ ] Ativar o servidor e a base de dados PostgreSQL gerida do GameAO; a base de dados deve ser persistente e partilhada entre desenvolvimento e publicação.
 - [ ] Criar migrações determinísticas, aditivas e seguras para utilizadores, papéis/permissões, produtos, categorias, media, banners, conteúdos da homepage, artigos, comentários, avaliações, carrinho, wishlists, encomendas, itens de encomenda, pagamentos/transações, cupões, entregas, configurações, notificações e auditoria.
 - [ ] Importar os 15 produtos, os artigos, os conteúdos da homepage e as configurações atuais sem perder nomes, imagens, preços-base, descontos ou informação apresentada; preservar as imagens atuais e o preço-base USD/AOA configurável.
 - [ ] A loja, o painel e o checkout devem consultar a mesma fonte de dados; não usar `localStorage` como substituto dos dados comerciais persistentes.
