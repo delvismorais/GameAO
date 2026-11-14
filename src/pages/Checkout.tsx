@@ -39,6 +39,10 @@ export function Checkout() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [paymentMethod, setPaymentMethod] = useState('');
+  const [variantSelection, setVariantSelection] = useState<Record<string, string>>({});
+  const [playerIds, setPlayerIds] = useState<Record<string, string>>({});
+  const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
+  const [verifyingPlayer, setVerifyingPlayer] = useState<string | null>(null);
   useEffect(() => { void fetch('/api/payment-methods').then((response) => response.ok ? response.json() : { methods: [] }).then((data: { methods?: PaymentMethod[] }) => setPaymentMethods(data.methods ?? [])); }, []);
 
   const totalUsd = cartSubtotalUsd - cartDiscountUsd;
@@ -84,9 +88,16 @@ export function Checkout() {
       showToast('Verifique os campos assinalados antes de confirmar a encomenda.', 'error');
       return;
     }
+    for (const { product } of cartLines) {
+      const needsPlayer = Boolean(product.requiresPlayerId) || product.productSubtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(product.name);
+      if (needsPlayer && !playerNames[product.id]) {
+        showToast(`Verifique o ID Free Fire de ${product.name} antes de continuar.`, 'error');
+        return;
+      }
+    }
     const response = await fetch('/api/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty })) }),
+      body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty, variantId: variantSelection[product.id] ? Number(variantSelection[product.id]) : undefined, playerId: playerIds[product.id] || undefined, playerNickname: playerNames[product.id] || undefined })) }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => null) as { message?: string } | null;
@@ -191,6 +202,18 @@ export function Checkout() {
               <span>Notas da encomenda (opcional)</span>
               <textarea rows={4} value={customer.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Instruções de entrega, referência do bairro, etc." />
             </label>
+          </section>
+
+          <section className="checkout-section">
+            <h2>Dados dos produtos</h2>
+            {cartLines.map(({ product }) => {
+              const needsPlayer = Boolean(product.requiresPlayerId) || product.productSubtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(product.name);
+              return <div className="checkout-product-data" key={product.id}>
+                <strong>{product.name}</strong>
+                {product.variants && product.variants.length > 0 && <label className="field"><span>Variante</span><select value={variantSelection[product.id] ?? ''} onChange={(event) => setVariantSelection((current) => ({ ...current, [product.id]: event.target.value }))}><option value="">Escolher variante</option>{product.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name} — {formatUsdAsAoa(variant.priceUsd, rate)}</option>)}</select></label>}
+                {needsPlayer && <div className="form-row"><label className="field"><span>ID Free Fire *</span><input inputMode="numeric" value={playerIds[product.id] ?? ''} onChange={(event) => { setPlayerIds((current) => ({ ...current, [product.id]: event.target.value })); setPlayerNames((current) => ({ ...current, [product.id]: '' })); }} placeholder="ID numérico do jogador" /></label><label className="field"><span>Nickname verificado</span><div className="form-row"><input value={playerNames[product.id] ?? ''} readOnly placeholder="Ainda não verificado" /><button type="button" className="btn btn--outline btn--sm" disabled={verifyingPlayer === product.id} onClick={async () => { setVerifyingPlayer(product.id); const result = await fetch('/api/freefire/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId: playerIds[product.id] }) }); const data = await result.json().catch(() => ({})) as { nickname?: string; message?: string }; if (result.ok && data.nickname) { setPlayerNames((current) => ({ ...current, [product.id]: data.nickname! })); showToast(`ID verificado: ${data.nickname}`, 'success'); } else showToast(data.message ?? 'Não foi possível verificar este ID.', 'error'); setVerifyingPlayer(null); }}>Verificar</button></div></label></div>}
+              </div>;
+            })}
           </section>
         </div>
 

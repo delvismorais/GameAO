@@ -20,7 +20,7 @@ function translateSql(source: string, params: unknown[]): { text: string; values
   return { text, values: params };
 }
 
-function shouldReturnId(sql: string): boolean { return /^\s*INSERT\s+INTO\s+(app_users|shop_orders)\b/i.test(sql) && !/\bRETURNING\b/i.test(sql); }
+function shouldReturnId(sql: string): boolean { return /^\s*INSERT\s+INTO\s+(app_users|shop_orders|product_variants)\b/i.test(sql) && !/\bRETURNING\b/i.test(sql); }
 export type DbRow = Record<string, any>;
 export type DbResult = { insertId?: number; affectedRows: number; rowCount: number };
 

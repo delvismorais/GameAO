@@ -100,6 +100,13 @@ async function readCatalogProducts(includeInactive = false) {
       GROUP BY p.id
       ORDER BY p.shop_order ASC, p.name ASC`,
   );
+  const [variantRows] = await getPool().query<any[]>(`SELECT id, product_id, name, sku, price_usd, original_price_usd, description, is_active, sort_order FROM product_variants WHERE is_active = 1 ORDER BY sort_order ASC, id ASC`);
+  const variantsByProduct = new Map<string, any[]>();
+  for (const variant of variantRows) {
+    const list = variantsByProduct.get(String(variant.product_id)) ?? [];
+    list.push({ id: Number(variant.id), name: variant.name, sku: variant.sku ?? undefined, priceUsd: Number(variant.price_usd), originalPriceUsd: variant.original_price_usd == null ? undefined : Number(variant.original_price_usd), description: variant.description ?? '' });
+    variantsByProduct.set(String(variant.product_id), list);
+  }
   return rows.map((row) => ({
     id: row.id,
     slug: row.slug,
@@ -123,6 +130,15 @@ async function readCatalogProducts(includeInactive = false) {
     developer: row.developer,
     platform: row.platform,
     isActive: Boolean(row.is_active),
+    categoryType: row.category_type === 'physical' ? 'physical' : 'digital',
+    productSubtype: row.product_subtype ?? 'digital_game',
+    requiresPlayerId: Boolean(row.requires_player_id),
+    subCategory: row.sub_category ?? undefined,
+    shippingCostAoa: Number(row.shipping_cost_aoa ?? 0),
+    additionalImages: parseArrayValue(row.additional_images_json),
+    videoUrl: row.video_url ?? undefined,
+    isDynamic: Boolean(row.is_dynamic),
+    variants: variantsByProduct.get(String(row.id)) ?? [],
   }));
 }
 
@@ -349,25 +365,40 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
   const connection = await getPool().getConnection();
   try {
     await connection.beginTransaction();
-    const items: Array<{ id: string; name: string; unit: number; qty: number; subtotal: number }> = [];
+    const items: Array<{ id: string; variantId: number | null; variantName: string | null; name: string; unit: number; qty: number; subtotal: number; categoryType: string; productSubtype: string; shipping: number; playerId: string | null; playerNickname: string | null; image: string }> = [];
     for (const raw of rawItems) {
       const productId = String(raw.productId ?? '');
       const qty = Math.max(1, Math.min(99, Math.floor(Number(raw.qty) || 1)));
-      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`, [productId]);
+      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`, [productId]);
       if (!product) continue;
-      const unit = Number(product.sale_price_usd ?? product.base_price_usd);
-      items.push({ id: product.id, name: product.name, unit, qty, subtotal: unit * qty * rate });
+      const variantId = raw.variantId == null ? null : Number(raw.variantId);
+      let variant: any = null;
+      if (variantId) {
+        const [[foundVariant]] = await connection.query<any[]>(`SELECT id, name, price_usd FROM product_variants WHERE id = ? AND product_id = ? AND is_active = 1 LIMIT 1`, [variantId, product.id]);
+        variant = foundVariant;
+        if (!variant) { await connection.rollback(); response.status(400).json({ error: 'invalid_variant', message: 'A variante selecionada já não está disponível.' }); return; }
+      }
+      const unit = Number(variant?.price_usd ?? product.sale_price_usd ?? product.base_price_usd);
+      const requiresPlayer = Boolean(product.requires_player_id) || product.product_subtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(String(product.name));
+      const playerId = typeof raw.playerId === 'string' && raw.playerId.trim() ? raw.playerId.trim().slice(0, 120) : null;
+      const playerNickname = typeof raw.playerNickname === 'string' && raw.playerNickname.trim() ? raw.playerNickname.trim().slice(0, 180) : null;
+      if (requiresPlayer && !playerId) { await connection.rollback(); response.status(400).json({ error: 'player_id_required', message: `O ID do jogador é obrigatório para ${product.name}.` }); return; }
+      items.push({ id: product.id, variantId: variant?.id ?? null, variantName: variant?.name ?? null, name: product.name, unit, qty, subtotal: unit * qty * rate, categoryType: product.category_type ?? 'digital', productSubtype: product.product_subtype ?? 'digital_game', shipping: product.category_type === 'physical' ? Math.max(0, Number(product.shipping_cost_aoa ?? 0)) : 0, playerId, playerNickname, image: product.image_card_url });
     }
     if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
-    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, subtotal_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, subtotal, subtotal, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null]);
+    const shipping = items.reduce((sum, item) => sum + item.shipping, 0);
+    const hasPhysical = items.some((item) => item.categoryType === 'physical');
+    if (hasPhysical && (!String(body.deliveryAddress ?? customer.address).trim() || !String(customer.city ?? '').trim() || !String(customer.province ?? '').trim())) { await connection.rollback(); response.status(400).json({ error: 'delivery_address_required', message: 'Produtos físicos exigem um endereço de entrega completo.' }); return; }
+    const deliveryDate = body.deliveryDate ? String(body.deliveryDate).slice(0, 10) : null;
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, String(body.deliveryAddress ?? customer.address).trim(), deliveryDate, subtotal, shipping, subtotal + shipping, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null]);
     const orderId = Number(insert.insertId);
     const orderNumber = `GA${orderId}`;
     await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);
-    for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, unit_price_aoa, quantity, subtotal_aoa) VALUES (?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.unit * rate, item.qty, item.subtotal]);
+    for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, variant_id, variant_name, unit_price_aoa, quantity, subtotal_aoa, player_id, player_nickname, category_type, product_subtype, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.variantId, item.variantName, item.unit * rate, item.qty, item.subtotal, item.playerId, item.playerNickname, item.categoryType, item.productSubtype, item.image]);
     await connection.execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, NULL, 'awaiting_payment', 'Encomenda criada no checkout.', ?)`, [orderId, user?.id ?? null]);
     await connection.commit();
-    response.status(201).json({ orderNumber, totalAoa: subtotal, invoiceTemplates: ['classic', 'modern'] });
+    response.status(201).json({ orderNumber, totalAoa: subtotal + shipping, subtotalAoa: subtotal, shippingAoa: shipping, invoiceTemplates: ['classic', 'modern'] });
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
 }));
 
@@ -507,6 +538,10 @@ app.post('/api/admin/products', asyncRoute(async (request, response) => {
      VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, slug, name, basePriceUsd, body.salePriceUsd == null || body.salePriceUsd === '' ? null : Number(body.salePriceUsd), JSON.stringify(Array.isArray(body.tags) ? body.tags : []), body.image, body.imageCard, body.hot ? 1 : 0, Number(body.shopOrder ?? 999), body.shortDescription ?? '', JSON.stringify(Array.isArray(body.description) ? body.description : []), Number(body.releaseYear ?? new Date().getFullYear()), body.developer ?? '', body.platform ?? ''],
   );
+  await getPool().execute(
+    `UPDATE catalog_products SET category_type = ?, product_subtype = ?, requires_player_id = ?, sub_category = ?, shipping_cost_aoa = ?, additional_images_json = ?, video_url = ?, is_dynamic = ? WHERE id = ?`,
+    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.requiresPlayerId ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, id],
+  );
   await recordAudit(user.id, 'create', 'product', id, { name, slug });
   response.status(201).json({ product: (await readCatalogProducts(true)).find((product) => product.id === id) });
 }));
@@ -518,12 +553,13 @@ app.put('/api/admin/products/:id', asyncRoute(async (request, response) => {
   const body = request.body ?? {};
   const id = String(request.params.id);
   const fields: Array<[string, string | number | null]> = [];
-  const allowed: Record<string, string> = { name: 'name', slug: 'slug', basePriceUsd: 'base_price_usd', salePriceUsd: 'sale_price_usd', image: 'image_url', imageCard: 'image_card_url', shortDescription: 'short_description', releaseYear: 'release_year', developer: 'developer', platform: 'platform', hot: 'is_hot', shopOrder: 'shop_order', isActive: 'is_active' };
+  const allowed: Record<string, string> = { name: 'name', slug: 'slug', basePriceUsd: 'base_price_usd', salePriceUsd: 'sale_price_usd', image: 'image_url', imageCard: 'image_card_url', shortDescription: 'short_description', releaseYear: 'release_year', developer: 'developer', platform: 'platform', hot: 'is_hot', shopOrder: 'shop_order', isActive: 'is_active', categoryType: 'category_type', productSubtype: 'product_subtype', requiresPlayerId: 'requires_player_id', subCategory: 'sub_category', shippingCostAoa: 'shipping_cost_aoa', videoUrl: 'video_url', isDynamic: 'is_dynamic' };
   for (const [input, column] of Object.entries(allowed)) {
-    if (input in body) fields.push([column, input === 'hot' || input === 'isActive' ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
+    if (input in body) fields.push([column, ['hot', 'isActive', 'requiresPlayerId', 'isDynamic'].includes(input) ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
   }
   if ('tags' in body) fields.push(['tags_json', JSON.stringify(Array.isArray(body.tags) ? body.tags : [])]);
   if ('description' in body) fields.push(['description_json', JSON.stringify(Array.isArray(body.description) ? body.description : [])]);
+  if ('additionalImages' in body) fields.push(['additional_images_json', JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : [])]);
   if (fields.length === 0) {
     response.status(400).json({ error: 'empty_update', message: 'Nenhum campo foi alterado.' });
     return;
@@ -549,6 +585,82 @@ app.delete('/api/admin/products/:id', asyncRoute(async (request, response) => {
   }
   await recordAudit(user.id, 'deactivate', 'product', id);
   response.status(204).end();
+}));
+
+app.get('/api/admin/products/:id/variants', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const [variants] = await getPool().query<any[]>(`SELECT id, product_id, name, sku, price_usd, original_price_usd, description, is_active, sort_order FROM product_variants WHERE product_id = ? ORDER BY sort_order ASC, id ASC`, [String(request.params.id)]);
+  response.json({ variants });
+}));
+
+app.post('/api/admin/products/:id/variants', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const body = request.body ?? {};
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const priceUsd = Number(body.priceUsd);
+  if (!name || !Number.isFinite(priceUsd) || priceUsd < 0) { response.status(400).json({ error: 'invalid_variant', message: 'Nome e preço válido são obrigatórios.' }); return; }
+  const [result] = await getPool().execute<any>(`INSERT INTO product_variants (product_id, name, sku, price_usd, original_price_usd, description, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`, [String(request.params.id), name, typeof body.sku === 'string' ? body.sku.trim() || null : null, priceUsd, body.originalPriceUsd == null || body.originalPriceUsd === '' ? null : Number(body.originalPriceUsd), typeof body.description === 'string' ? body.description.trim() : '', Number(body.sortOrder ?? 0)]);
+  await recordAudit(admin.id, 'create', 'product_variant', String(result.insertId), { productId: request.params.id, name });
+  response.status(201).json({ variant: { id: Number(result.insertId), productId: String(request.params.id), name, priceUsd } });
+}));
+
+app.put('/api/admin/variants/:id', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const body = request.body ?? {};
+  const fields: Array<[string, unknown]> = [];
+  for (const [input, column] of [['name', 'name'], ['sku', 'sku'], ['description', 'description'], ['priceUsd', 'price_usd'], ['originalPriceUsd', 'original_price_usd'], ['sortOrder', 'sort_order'], ['isActive', 'is_active']] as const) {
+    if (input in body) fields.push([column, input === 'isActive' ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
+  }
+  if (!fields.length) { response.status(400).json({ error: 'empty_update', message: 'Nenhuma definição foi alterada.' }); return; }
+  await getPool().execute(`UPDATE product_variants SET ${fields.map(([column]) => `\"${column}\" = ?`).join(', ')}, updated_at = NOW() WHERE id = ?`, [...fields.map(([, value]) => value), Number(request.params.id)]);
+  await recordAudit(admin.id, 'update', 'product_variant', String(request.params.id), { fields: fields.map(([column]) => column) });
+  response.json({ ok: true });
+}));
+
+app.delete('/api/admin/variants/:id', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  await getPool().execute(`DELETE FROM product_variants WHERE id = ?`, [Number(request.params.id)]);
+  await recordAudit(admin.id, 'delete', 'product_variant', String(request.params.id));
+  response.status(204).end();
+}));
+
+app.post('/api/freefire/verify', asyncRoute(async (request, response) => {
+  const playerId = typeof request.body?.playerId === 'string' ? request.body.playerId.trim() : '';
+  if (!/^[0-9]{5,20}$/.test(playerId)) { response.status(400).json({ error: 'invalid_player_id', message: 'Indique um ID Free Fire numérico válido.' }); return; }
+  const providerUrl = process.env.FREEFIRE_VERIFY_URL?.trim();
+  if (!providerUrl) { response.status(503).json({ error: 'not_configured', message: 'A verificação automática de Free Fire ainda não foi configurada pela GameAO.' }); return; }
+  const providerResponse = await fetch(providerUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.FREEFIRE_VERIFY_API_KEY ? { Authorization: `Bearer ${process.env.FREEFIRE_VERIFY_API_KEY}` } : {}) }, body: JSON.stringify({ playerId }) });
+  if (!providerResponse.ok) { response.status(502).json({ error: 'provider_error', message: 'O serviço de verificação Free Fire não respondeu corretamente.' }); return; }
+  const data = await providerResponse.json() as { valid?: boolean; nickname?: string };
+  if (!data.valid || !data.nickname) { response.status(422).json({ error: 'player_not_found', message: 'O ID Free Fire não foi validado.' }); return; }
+  response.json({ verified: true, playerId, nickname: String(data.nickname).slice(0, 180) });
+}));
+
+app.get('/api/account/freefire-ids', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const user = await getAuthenticatedUser(request);
+  if (!user) { response.status(401).json({ error: 'unauthorized', message: 'Inicie sessão para ver os IDs guardados.' }); return; }
+  const [ids] = await getPool().query<any[]>(`SELECT id, player_id, player_nickname, verified_at FROM freefire_ids WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50`, [user.id]);
+  response.json({ ids });
+}));
+
+app.post('/api/account/freefire-ids', asyncRoute(async (request, response) => {
+  if (!requireDatabase(response)) return;
+  const user = await getAuthenticatedUser(request);
+  if (!user) { response.status(401).json({ error: 'unauthorized', message: 'Inicie sessão para guardar um ID.' }); return; }
+  const playerId = String(request.body?.playerId ?? '').trim();
+  const nickname = String(request.body?.nickname ?? '').trim();
+  if (!/^[0-9]{5,20}$/.test(playerId) || !nickname) { response.status(400).json({ error: 'invalid_player', message: 'ID e nickname válidos são obrigatórios.' }); return; }
+  await getPool().execute(`INSERT INTO freefire_ids (user_id, player_id, player_nickname) VALUES (?, ?, ?) ON CONFLICT (user_id, player_id) DO UPDATE SET player_nickname = EXCLUDED.player_nickname, verified_at = NOW(), updated_at = NOW()`, [user.id, playerId, nickname.slice(0, 180)]);
+  response.status(201).json({ ok: true });
 }));
 
 app.get('/api/admin/status', asyncRoute(async (request, response) => {

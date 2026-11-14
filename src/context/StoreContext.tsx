@@ -135,6 +135,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     readStorage<string[]>(STORAGE_KEYS.compare, []),
   );
   const [user, setUser] = useState<User | null>(null);
+  const [serverProducts, setServerProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>(() =>
     readStorage<Order[]>(STORAGE_KEYS.orders, []),
   );
@@ -163,6 +164,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (active) setUser(null);
       });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/catalog/products')
+      .then((response) => response.ok ? response.json() : { products: [] })
+      .then((data: { products?: Product[] }) => { if (active && Array.isArray(data.products)) setServerProducts(data.products); })
+      .catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -278,11 +288,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () =>
       cart
         .map((line) => {
-          const product = getProductById(line.productId);
+          const product = serverProducts.find((item) => item.id === line.productId) ?? getProductById(line.productId);
           return product ? { product, qty: line.qty } : null;
         })
         .filter((line): line is { product: Product; qty: number } => line !== null),
-    [cart],
+    [cart, serverProducts],
   );
 
   const cartSubtotalUsd = useMemo(

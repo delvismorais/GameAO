@@ -42,6 +42,16 @@ export interface Product {
   releaseYear: number;
   developer: string;
   platform: string;
+  isActive?: boolean;
+  categoryType?: 'digital' | 'physical';
+  productSubtype?: 'physical' | 'digital_game' | 'digital_other';
+  requiresPlayerId?: boolean;
+  subCategory?: string;
+  shippingCostAoa?: number;
+  additionalImages?: string[];
+  videoUrl?: string;
+  isDynamic?: boolean;
+  variants?: Array<{ id: number; name: string; sku?: string; priceUsd: number; originalPriceUsd?: number; description?: string }>;
 }
 
 const img = (n: number) => `/assets/products/game-${n}.jpg`;
