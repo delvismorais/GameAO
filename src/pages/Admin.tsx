@@ -61,7 +61,7 @@ export function Admin() {
   const updateForm = (key: keyof typeof EMPTY_FORM, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const createProduct = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage('');
-    const response = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ ...form, basePriceUsd: Number(form.basePriceUsd), salePriceUsd: form.salePriceUsd ? Number(form.salePriceUsd) : null, shippingCostAoa: Number(form.shippingCostAoa || 0), tags: [], description: form.shortDescription ? [form.shortDescription] : [], releaseYear: new Date().getFullYear() }) });
+    const response = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ ...form, basePriceUsd: Number(form.basePriceUsd), salePriceUsd: form.salePriceUsd ? Number(form.salePriceUsd) : null, shippingCostAoa: form.categoryType === 'physical' ? Number(form.shippingCostAoa || 0) : 0, requiresPlayerId: form.categoryType === 'digital' && form.requiresPlayerId, tags: [], description: form.shortDescription ? [form.shortDescription] : [], releaseYear: new Date().getFullYear() }) });
     if (!response.ok) { const data = await response.json().catch(() => null) as { message?: string } | null; setMessage(data?.message ?? 'Não foi possível criar o produto.'); return; }
     setForm(EMPTY_FORM); setMessage('Produto criado e guardado na base de dados.'); await load();
   };

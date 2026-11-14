@@ -347,8 +347,8 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
   const body = request.body ?? {};
   const customer = body.customer ?? {};
   const rawItems = Array.isArray(body.items) ? body.items : [];
-  if (!rawItems.length || !validEmail(customer.email) || !customer.firstName || !customer.lastName || !customer.phone || !customer.address || !customer.city || !customer.province) {
-    response.status(400).json({ error: 'invalid_order', message: 'Dados do cliente e produtos da encomenda são obrigatórios.' }); return;
+  if (!rawItems.length || !validEmail(customer.email) || !customer.firstName || !customer.lastName || !customer.phone) {
+    response.status(400).json({ error: 'invalid_order', message: 'Nome, telefone, email e produtos da encomenda são obrigatórios.' }); return;
   }
   const user = await getAuthenticatedUser(request);
   const paymentMethodCode = typeof body.paymentMethod === 'string' ? body.paymentMethod.trim() : '';
