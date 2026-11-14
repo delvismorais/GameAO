@@ -95,10 +95,16 @@ export function Checkout() {
         return;
       }
     }
-    const response = await fetch('/api/orders', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty, variantId: variantSelection[product.id] ? Number(variantSelection[product.id]) : undefined, playerId: playerIds[product.id] || undefined, playerNickname: playerNames[product.id] || undefined })) }),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/api/orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty, variantId: variantSelection[product.id] ? Number(variantSelection[product.id]) : undefined, playerId: playerIds[product.id] || undefined, playerNickname: playerNames[product.id] || undefined })) }),
+      });
+    } catch {
+      showToast('Não foi possível contactar o servidor. Verifique a ligação e tente novamente.', 'error');
+      return;
+    }
     if (!response.ok) {
       const data = await response.json().catch(() => null) as { message?: string } | null;
       showToast(data?.message ?? 'Não foi possível registar a encomenda.', 'error');
@@ -257,7 +263,7 @@ export function Checkout() {
             e uma política de tratamento configurada.
           </p>
           <button type="submit" className="btn btn--primary btn--block btn--lg">
-            Registar encomenda
+            Efetuar pedido
           </button>
           <Link to="/cart" className="order-summary__back">← Voltar ao carrinho</Link>
         </aside>

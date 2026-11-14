@@ -391,15 +391,20 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     const hasPhysical = items.some((item) => item.categoryType === 'physical');
     if (hasPhysical && (!String(body.deliveryAddress ?? customer.address).trim() || !String(customer.city ?? '').trim() || !String(customer.province ?? '').trim())) { await connection.rollback(); response.status(400).json({ error: 'delivery_address_required', message: 'Produtos físicos exigem um endereço de entrega completo.' }); return; }
     const deliveryDate = body.deliveryDate ? String(body.deliveryDate).slice(0, 10) : null;
-    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?)`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, String(body.deliveryAddress ?? customer.address).trim(), deliveryDate, subtotal, shipping, subtotal + shipping, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null]);
-    const orderId = Number(insert.insertId);
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, String(body.deliveryAddress ?? customer.address).trim(), deliveryDate, subtotal, shipping, subtotal + shipping, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null]);
+    const orderId = Number(Array.isArray(insert) ? insert[0]?.id : insert?.insertId);
+    if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('A base de dados não devolveu o identificador da encomenda.');
     const orderNumber = `GA${orderId}`;
     await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);
     for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, variant_id, variant_name, unit_price_aoa, quantity, subtotal_aoa, player_id, player_nickname, category_type, product_subtype, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.variantId, item.variantName, item.unit * rate, item.qty, item.subtotal, item.playerId, item.playerNickname, item.categoryType, item.productSubtype, item.image]);
     await connection.execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, NULL, 'awaiting_payment', 'Encomenda criada no checkout.', ?)`, [orderId, user?.id ?? null]);
     await connection.commit();
     response.status(201).json({ orderNumber, totalAoa: subtotal + shipping, subtotalAoa: subtotal, shippingAoa: shipping, invoiceTemplates: ['classic', 'modern'] });
-  } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
+  } catch (error) {
+    await connection.rollback();
+    console.error('[orders] falha ao criar encomenda', error instanceof Error ? error.message : error);
+    response.status(500).json({ error: 'order_creation_failed', message: 'Não foi possível concluir a encomenda neste momento. Tente novamente.' });
+  } finally { connection.release(); }
 }));
 
 app.get('/api/orders/:orderNumber', asyncRoute(async (request, response) => {
