@@ -15,6 +15,16 @@
 .admin-products-table{min-width:0}
 .admin-products-table article,.admin-products-table article>*{min-width:0}
 .admin-products-table strong,.admin-products-table small{overflow-wrap:anywhere}
+.admin-product-cell{display:flex;align-items:center;gap:9px;min-width:190px}
+.admin-product-cell img{width:42px;height:42px;flex:0 0 42px;object-fit:cover;border-radius:4px;background:#eef1f5}
+.admin-product-cell span{display:grid;gap:2px;min-width:0}
+.admin-product-cell strong,.admin-product-cell small{overflow-wrap:anywhere}
+.admin-product-old-price{display:block;color:var(--muted);font-size:10px;text-decoration:line-through}
+.admin-products-admin-table{min-width:980px}
+.admin-products-admin-table th,.admin-products-admin-table td{vertical-align:middle}
+.admin-product-actions{display:flex;flex-wrap:wrap;gap:5px;min-width:230px}
+.admin-product-actions .btn{white-space:nowrap}
+.admin-badge--muted{border-color:#d7dde5;background:#f4f6f8;color:#5d6875}
 .admin-preview,.admin-media-card__preview img{max-width:100%}
 .admin-field,.admin-fieldset,.admin-form input,.admin-form select,.admin-form textarea,.admin-modal input,.admin-modal select,.admin-modal textarea{max-width:100%;min-width:0;box-sizing:border-box}
 .admin-operation-tabs{min-width:0;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
@@ -64,6 +74,8 @@
   .admin-products-table article{grid-template-columns:44px minmax(0,1fr);gap:8px}
   .admin-products-table article>span,.admin-products-table article>button{grid-column:2;justify-self:start}
   .admin-products-table img{width:44px;height:58px}
+  .admin-products-admin-table{min-width:980px}
+  .admin-product-actions{align-items:flex-start;flex-direction:column}
   .admin-detail__summary>div{min-width:0}
   .admin-detail__badges{display:flex;flex-wrap:wrap;gap:6px}
   .admin-proof{align-items:flex-start;flex-direction:column}

@@ -68,3 +68,15 @@ Componentes potencialmente úteis como referência conceptual: Header, Footer, H
 ## Relação com o pedido atual
 
 O utilizador quer iniciar pequenas alterações no GameAO mantendo a estrutura e a aparência, usando este repositório como apoio. As próximas alterações devem ser tratadas como evoluções incrementais da réplica GameShop, não como uma migração para a arquitetura MD Recargas.
+
+
+## Observação adicional — painel admin em 15/11/2026
+
+Após autenticação autorizada em `https://recargas.morasio.shop/admin/`, as rotas administrativas corretas observadas foram:
+
+- Pedidos: `https://recargas.morasio.shop/admin/pedidos`
+- Produtos: `https://recargas.morasio.shop/admin/produtos`
+
+A página de pedidos apresenta navegação lateral agrupada, pesquisa por pedido/cliente/telefone, filtros de estado e tipo de pedido, cartões individuais com número, data, cliente, contacto, itens, total, badges de estado/comprovativo, ação de ver detalhes e eliminação.
+
+A página de produtos apresenta navegação lateral agrupada, botão Novo Produto e uma tabela com produto, categoria, tipo digital/físico, preço atual e anterior, estado, destaque e ações rápidas de visualizar, editar, ativar/desativar e eliminar. A GameAO adapta estes padrões com dados e identidade próprios, sem copiar logótipo, cores ou dados comerciais da referência.
