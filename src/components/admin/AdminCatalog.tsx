@@ -16,9 +16,9 @@ export function AdminProductsSection({ section }: { section: AdminSectionId }) {
   if (section === 'stock') return <AdminStock products={products.data?.products ?? []} reload={products.reload} />;
   if (section === 'featured') return <AdminProductFlags products={products.data?.products ?? []} reload={products.reload} mode="featured" />;
   if (section === 'promos') return <AdminProductFlags products={products.data?.products ?? []} reload={products.reload} mode="promos" />;
-  return <div>
+    return <div>
     {message && <Notice message={message} tone={message.includes('Não') ? 'error' : 'success'} />}
-    {products.loading ? <p className="admin-state">A carregar catálogo…</p> : products.error ? <Notice tone="error" message={products.error} /> : <ProductCatalogManager products={(products.data?.products ?? []) as unknown as Parameters<typeof ProductCatalogManager>[0]['products']} rate={rate} onRefresh={products.reload} onMessage={setMessage} />}
+    {products.loading ? <p className="admin-state">A carregar catálogo…</p> : products.error ? <Notice tone="error" message={products.error} /> : <ProductCatalogManager openCreate={section === 'product-new'} products={(products.data?.products ?? []) as unknown as Parameters<typeof ProductCatalogManager>[0]['products']} rate={rate} onRefresh={products.reload} onMessage={setMessage} />}
   </div>;
 }
 

@@ -9,6 +9,14 @@ type Comment = { id: number; post_slug: string; post_title?: string; author_name
 type Message = { id: number; name: string; email: string; phone?: string; subject?: string; message: string; status: string; created_at: string };
 type Settings = Record<string, any>;
 
+async function uploadContentImage(file: File, kind: 'banner' | 'blog'): Promise<{ url?: string; error?: string }> {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('kind', kind);
+  const result = await api<{ url?: string }>('/api/admin/media', { method: 'POST', body });
+  return result.ok ? result.data : { error: result.error ?? 'Não foi possível enviar a imagem.' };
+}
+
 export function AdminContent({ section }: { section: AdminSectionId }) {
   if (section === 'homepage') return <AdminHomepage />;
   if (section === 'banners' || section === 'carousels') return <AdminBanners mode={section === 'carousels' ? 'carousel' : 'homepage'} />;
@@ -54,6 +62,7 @@ function AdminBanners({ mode }: { mode: string }) {
   const [editing, setEditing] = useState<Banner | null>(null);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({ slug: '', title: '', description: '', image: '', buttonLabel: '', href: '', variant: mode, sortOrder: 0, isActive: true, startsAt: '', endsAt: '' });
   const list = (data?.banners ?? []).filter((banner) => mode === 'carousel' ? banner.variant === 'carousel' : banner.variant !== 'carousel');
   const openCreate = () => { setForm({ slug: '', title: '', description: '', image: '', buttonLabel: '', href: '', variant: mode, sortOrder: 0, isActive: true, startsAt: '', endsAt: '' }); setCreating(true); };
@@ -62,13 +71,15 @@ function AdminBanners({ mode }: { mode: string }) {
     const result = editing ? await api(`/api/admin/banners/${editing.id}`, { method: 'PUT', body: JSON.stringify(form) }) : await api('/api/admin/banners', { method: 'POST', body: JSON.stringify(form) });
     setMessage(result.ok ? 'Banner guardado.' : result.error ?? 'Falha ao guardar banner.'); if (result.ok) { setCreating(false); setEditing(null); await reload(); }
   };
+  const toggleActive = async (banner: Banner) => { const result = await api(`/api/admin/banners/${banner.id}`, { method: 'PUT', body: JSON.stringify({ isActive: !banner.is_active }) }); setMessage(result.ok ? `Banner ${banner.is_active ? 'desativado' : 'ativado'}.` : result.error ?? 'Falha ao atualizar banner.'); if (result.ok) await reload(); };
+  const upload = async (file: File) => { setUploading(true); const result = await uploadContentImage(file, 'banner'); setUploading(false); setMessage(result.url ? 'Imagem enviada.' : result.error ?? 'Falha no envio.'); if (result.url) setForm((current) => ({ ...current, image: result.url! })); };
   return <AdminSection title={mode === 'carousel' ? 'Carrosséis' : 'Banners'} subtitle="Imagens e chamadas de ação usadas no website." actions={<button type="button" className="btn btn--primary btn--sm" onClick={openCreate}>Novo banner</button>}>
     <Notice message={message} tone={message.includes('Falha') ? 'error' : 'success'} />
-    <div className="admin-media-grid">{loading ? <Empty>A carregar…</Empty> : list.length ? list.map((banner) => <article key={banner.id} className="admin-media-card"><img src={banner.image_url} alt={banner.title} /><div><strong>{banner.title}</strong><small>{banner.slug} · ordem {banner.sort_order}</small><Badge tone={banner.is_active ? 'success' : 'muted'}>{banner.is_active ? 'Ativo' : 'Inativo'}</Badge></div><button type="button" className="btn btn--outline btn--sm" onClick={() => openEdit(banner)}>Editar</button></article>) : <Empty>Sem banners nesta vista.</Empty>}</div>
+    <div className="admin-media-grid">{loading ? <Empty>A carregar…</Empty> : list.length ? list.map((banner) => <article key={banner.id} className="admin-media-card"><img src={banner.image_url} alt={banner.title} /><div><strong>{banner.title}</strong><small>{banner.slug} · ordem {banner.sort_order}</small><Badge tone={banner.is_active ? 'success' : 'muted'}>{banner.is_active ? 'Ativo' : 'Inativo'}</Badge></div><div className="admin-row-actions"><button type="button" className="btn btn--outline btn--sm" onClick={() => openEdit(banner)}>Editar</button><button type="button" className="btn btn--outline btn--sm" onClick={() => void toggleActive(banner)}>{banner.is_active ? 'Desativar' : 'Ativar'}</button></div></article>) : <Empty>Sem banners nesta vista.</Empty>}</div>
     <Modal open={creating || Boolean(editing)} title={editing ? `Editar ${editing.title}` : 'Novo banner'} onClose={() => { setCreating(false); setEditing(null); }} wide>
       <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <div className="form-row"><Field label="Título *"><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></Field><Field label="Slug *"><input required value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} /></Field></div>
-        <Field label="Imagem (URL) *"><input required value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /></Field>
+        <Field label="Imagem (URL) *"><input required value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ''; }} />{uploading && <small>A enviar imagem…</small>}</Field>
         <Field label="Descrição"><textarea rows={2} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></Field>
         <div className="form-row"><Field label="Texto do botão"><input value={form.buttonLabel} onChange={(event) => setForm({ ...form, buttonLabel: event.target.value })} /></Field><Field label="Link do botão"><input value={form.href} onChange={(event) => setForm({ ...form, href: event.target.value })} /></Field></div>
         <div className="form-row"><Field label="Variante"><select value={form.variant} onChange={(event) => setForm({ ...form, variant: event.target.value })}><option value="homepage">Homepage</option><option value="carousel">Carrossel</option><option value="promo">Promoção</option></select></Field><Field label="Ordem"><input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} /></Field></div>
@@ -114,6 +125,7 @@ function AdminBlog() {
   const [editing, setEditing] = useState<Post | null>(null);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
   const empty = { title: '', slug: '', category: 'Notícias', excerpt: '', content: '', image: '/assets/blog/post-1.jpg', status: 'draft' };
   const [form, setForm] = useState(empty);
   const save = async () => {
@@ -123,6 +135,7 @@ function AdminBlog() {
   };
   const approve = async (post: Post) => { const result = await api(`/api/admin/content/posts/${encodeURIComponent(post.slug)}`, { method: 'PUT', body: JSON.stringify({ status: 'published' }) }); setMessage(result.ok ? 'Artigo publicado.' : result.error ?? 'Falha ao publicar.'); if (result.ok) await reload(); };
   const archive = async (post: Post) => { if (!window.confirm(`Arquivar "${post.title}"?`)) return; const result = await api(`/api/admin/content/posts/${encodeURIComponent(post.slug)}`, { method: 'DELETE' }); setMessage(result.ok ? 'Artigo arquivado.' : result.error ?? 'Falha ao arquivar.'); if (result.ok) await reload(); };
+  const upload = async (file: File) => { setUploading(true); const result = await uploadContentImage(file, 'blog'); setUploading(false); setMessage(result.url ? 'Imagem enviada.' : result.error ?? 'Falha no envio.'); if (result.url) setForm((current) => ({ ...current, image: result.url! })); };
   return <AdminSection title="Blog" subtitle="Artigos publicados, rascunhos e submissões de clientes." actions={<button type="button" className="btn btn--primary btn--sm" onClick={() => { setForm(empty); setCreating(true); }}>Novo artigo</button>}>
     <Notice message={message} tone={message.includes('Falha') ? 'error' : 'success'} />
     <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Artigo</th><th>Categoria</th><th>Autor</th><th>Views</th><th>Estado</th><th /></tr></thead><tbody>{loading ? <tr><td colSpan={6}><Empty>A carregar…</Empty></td></tr> : data?.posts.map((post) => <tr key={post.slug}><td><strong>{post.title}</strong><small>{post.published_date?.slice(0, 10)} · {post.excerpt?.slice(0, 70)}</small></td><td>{post.category}</td><td>{post.author}</td><td>{post.views}</td><td><Badge tone={post.status === 'published' ? 'success' : post.status === 'pending' ? 'warning' : 'muted'}>{post.status}</Badge></td><td><div className="admin-row-actions"><a className="btn btn--outline btn--sm" href={`/blog/${post.slug}`} target="_blank" rel="noopener noreferrer">Ver</a><button type="button" className="btn btn--outline btn--sm" onClick={() => { setForm({ title: post.title, slug: post.slug, category: post.category, excerpt: post.excerpt ?? '', content: (post.blocks ?? []).map((block) => block.text ?? '').join('\n\n'), image: post.image_url, status: post.status }); setEditing(post); }}>Editar</button>{post.status === 'pending' && <button type="button" className="btn btn--primary btn--sm" onClick={() => void approve(post)}>Aprovar</button>}<button type="button" className="btn btn--outline btn--sm" onClick={() => void archive(post)}>Arquivar</button></div></td></tr>)}</tbody></table></div>
@@ -130,7 +143,7 @@ function AdminBlog() {
       <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <Field label="Título *"><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></Field>
         {!editing && <Field label="Slug *"><input required value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} /></Field>}
-        <div className="form-row"><Field label="Categoria"><input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></Field><Field label="Imagem"><input value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /></Field></div>
+        <div className="form-row"><Field label="Categoria"><input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></Field><Field label="Imagem"><input value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ''; }} />{uploading && <small>A enviar imagem…</small>}</Field></div>
         <Field label="Resumo"><textarea rows={2} value={form.excerpt} onChange={(event) => setForm({ ...form, excerpt: event.target.value })} /></Field>
         <Field label="Conteúdo" hint="Separe parágrafos com uma linha vazia."><textarea rows={10} value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} /></Field>
         <Field label="Estado"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="pending">Pendente</option><option value="archived">Arquivado</option></select></Field>
