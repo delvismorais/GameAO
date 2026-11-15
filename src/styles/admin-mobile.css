@@ -4,9 +4,31 @@
 .admin-main{overflow:hidden}
 .admin-topbar__crumb{min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .admin-topbar__crumb strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.admin-table-wrap{max-width:100%;-webkit-overflow-scrolling:touch}
+.admin-table-wrap{width:100%;max-width:100%;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
 .admin-table{min-width:620px}
+.admin-table td,.admin-table th{overflow-wrap:anywhere}
 .admin-form,.admin-section,.admin-card,.admin-method,.admin-integration{min-width:0}
+.admin-row-actions,.admin-section__actions,.admin-form__actions{min-width:0}
+.admin-row-actions .btn,.admin-section__actions .btn,.admin-form__actions .btn{touch-action:manipulation}
+.admin-products-grid,.admin-grid,.admin-split,.admin-detail__grid,.admin-dashboard__grid{min-width:0}
+.admin-products-grid>*,.admin-grid>*,.admin-split>*,.admin-detail__grid>*,.admin-dashboard__grid>*{min-width:0}
+.admin-products-table{min-width:0}
+.admin-products-table article,.admin-products-table article>*{min-width:0}
+.admin-products-table strong,.admin-products-table small{overflow-wrap:anywhere}
+.admin-preview,.admin-media-card__preview img{max-width:100%}
+.admin-field,.admin-fieldset,.admin-form input,.admin-form select,.admin-form textarea,.admin-modal input,.admin-modal select,.admin-modal textarea{max-width:100%;min-width:0;box-sizing:border-box}
+.admin-operation-tabs{min-width:0;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+.admin-operation-tabs button{flex:0 0 auto;min-height:42px;white-space:nowrap;touch-action:manipulation}
+
+/* Modals: no dialog may exceed the viewport, and the close control stays easy to tap. */
+.admin-modal{overflow-y:auto;overflow-x:hidden;place-items:center;overscroll-behavior:contain}
+.admin-modal__panel{min-width:0;min-height:0;max-width:100%;overflow:hidden}
+.admin-modal__panel header{flex:0 0 auto;align-items:center;gap:12px;min-width:0}
+.admin-modal__panel header h2{min-width:0;margin:0;overflow-wrap:anywhere}
+.admin-modal__close{display:inline-flex;flex:0 0 44px;align-items:center;justify-content:center;width:44px;height:44px;margin:-6px -8px -6px 0;border:1px solid #d7dde8;border-radius:6px;background:#fff;color:var(--dark);font-size:28px;line-height:1;cursor:pointer;touch-action:manipulation}
+.admin-modal__close:hover{background:#f7f8fa;color:var(--primary)}
+.admin-modal__body{min-width:0;overflow-x:hidden;overscroll-behavior:contain}
+
 @media (max-width: 640px){
   .admin-sidebar{width:min(286px,88vw)}
   .admin-main{padding:0 10px 22px}
@@ -24,8 +46,51 @@
   .admin-media-grid,.admin-media-library{grid-template-columns:1fr}
   .admin-bars__row{grid-template-columns:82px minmax(0,1fr) 30px;gap:6px}
   .admin-template-list__rows button{grid-template-columns:1fr;gap:4px}
-  .admin-modal{padding:8px}
-  .admin-modal__panel,.admin-modal__panel.is-wide{width:100%;max-height:94vh}
-  .admin-modal__body{padding:14px}
-  .admin-method dl{grid-template-columns:1fr}
+
+  .admin-modal{align-items:stretch;justify-items:stretch;padding:8px;padding-top:max(8px,env(safe-area-inset-top));padding-bottom:max(8px,env(safe-area-inset-bottom))}
+  .admin-modal__panel,.admin-modal__panel.is-wide{width:100%;max-width:100%;height:auto;max-height:calc(100dvh - 16px);border-radius:4px}
+  .admin-modal__panel header{padding:12px 14px}
+  .admin-modal__panel header h2{font-size:16px;line-height:1.25}
+  .admin-modal__close{flex-basis:46px;width:46px;height:46px;margin:-7px -7px -7px 0;font-size:30px}
+  .admin-modal__body{padding:14px;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .admin-modal .form-row{grid-template-columns:1fr}
+  .admin-modal .admin-form__actions{display:flex;flex-direction:column;align-items:stretch}
+  .admin-modal .admin-form__actions .btn,.admin-modal .admin-section__actions .btn{width:100%;min-height:42px}
+  .admin-form input,.admin-form select,.admin-form textarea,.admin-modal input,.admin-modal select,.admin-modal textarea{width:100%;font-size:16px}
+
+  .admin-grid,.admin-products-grid,.admin-split,.admin-detail__grid,.admin-dashboard__grid{grid-template-columns:1fr}
+  .admin-products-grid{gap:12px}
+  .admin-card,.admin-method,.admin-integration{padding:14px}
+  .admin-products-table article{grid-template-columns:44px minmax(0,1fr);gap:8px}
+  .admin-products-table article>span,.admin-products-table article>button{grid-column:2;justify-self:start}
+  .admin-products-table img{width:44px;height:58px}
+  .admin-detail__summary>div{min-width:0}
+  .admin-detail__badges{display:flex;flex-wrap:wrap;gap:6px}
+  .admin-proof{align-items:flex-start;flex-direction:column}
+  .admin-proof__actions,.admin-invoice-actions{display:flex;flex-wrap:wrap;width:100%;gap:6px}
+  .admin-proof__actions .btn,.admin-invoice-actions .btn{min-height:42px}
+  .admin-toolbar{grid-template-columns:1fr}
+  .admin-toolbar input,.admin-toolbar select{width:100%;min-height:42px;font-size:16px}
+  .admin-head--inner .admin-section__actions,.admin-head--inner .admin-form__actions{display:flex;flex-direction:column;align-items:stretch}
+  .admin-head--inner .admin-section__actions .btn{width:100%;min-height:42px}
+  .admin-section__inline-actions{width:100%;align-items:stretch;flex-direction:column}
+  .admin-section__inline-actions .btn{width:100%;min-height:42px}
+  .admin-template-list header{align-items:flex-start;flex-direction:column;gap:6px}
+  .admin-alert-list li{padding:12px}
+  .admin-alert-list li .admin-row-actions{width:100%;margin-top:8px}
+  .admin-alert-list li .admin-row-actions .btn{min-height:42px}
+  .admin-uploader__actions{display:flex;flex-direction:column;width:100%;align-items:stretch}
+  .admin-uploader__actions select,.admin-uploader__actions .btn{width:100%;min-height:42px}
+  .admin-media-card__actions{display:grid;grid-template-columns:1fr;gap:6px}
+  .admin-media-card__actions .btn{min-height:42px}
+  .admin-links-grid{grid-template-columns:1fr}
+  .admin-kpis,.admin-kpis--compact{grid-template-columns:1fr 1fr}
+  .admin-kpis button,.admin-kpis article{min-width:0;padding:12px}
+}
+
+@media (min-width: 641px) and (max-width: 820px){
+  .admin-modal{padding:14px}
+  .admin-modal__panel.is-wide{width:100%;max-width:100%;max-height:calc(100dvh - 28px)}
+  .admin-detail__grid,.admin-split,.admin-dashboard__grid,.admin-products-grid{grid-template-columns:1fr}
+  .admin-products-table article{grid-template-columns:52px minmax(0,1fr) auto}
 }
