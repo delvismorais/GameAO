@@ -370,10 +370,10 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   return result;
 }
 
-export function orderVariables(order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string }> }): Record<string, string> {
+export function orderVariables(order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string; player_id?: string | null; player_nickname?: string | null }> }): Record<string, string> {
   const items = order.items ?? [];
   const list = items.length
-    ? `<ul>${items.map((item) => `<li>${escapeHtml(item.product_name)} × ${Number(item.quantity)} — ${formatAoa(item.subtotal_aoa)}</li>`).join('')}</ul>`
+    ? `<ul>${items.map((item) => `<li>${escapeHtml(item.product_name)} × ${Number(item.quantity)}${item.player_id ? ` — ID: ${escapeHtml(item.player_id)}${item.player_nickname ? ` (${escapeHtml(item.player_nickname)})` : ''}` : ''} — ${formatAoa(item.subtotal_aoa)}</li>`).join('')}</ul>`
     : '';
   return { order_items: list };
 }

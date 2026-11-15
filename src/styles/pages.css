@@ -2873,6 +2873,8 @@
 .tracking-items { margin: 20px 0; }
 .tracking-items > div { display:grid; grid-template-columns:48px 1fr auto; align-items:center; gap:12px; border-bottom:1px solid var(--line-light); padding:10px 0; }
 .tracking-items img { width:48px; height:64px; object-fit:cover; }
+.tracking-item-player { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; }
+.checkout-verified-note { margin:8px 0 0; color:#1d8a58; font-size:12px; }
 .tracking-total { display:flex; justify-content:space-between; padding:18px 0; font-size:18px; }
 .tracking-total strong { color:var(--primary); }
 @media (max-width: 700px) { .tracking-form,.tracking-meta { grid-template-columns:1fr; } .tracking-timeline { grid-template-columns:1fr; gap:12px; justify-items:start; } .tracking-step { grid-template-columns:30px 1fr; justify-items:start; text-align:left; align-items:center; } .tracking-step:not(:last-child)::after { top:30px; left:14px; width:2px; height:calc(100% + 12px); } .tracking-history li { grid-template-columns:1fr; } .tracking-history small { grid-column:1; } }

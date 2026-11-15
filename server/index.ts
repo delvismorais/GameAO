@@ -528,7 +528,7 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
       }
     }
     void notifyOrderCreated(
-      { id: orderId, order_number: orderNumber, tracking_token: trackingToken, customer_name: `${customer.firstName} ${customer.lastName}`.trim(), customer_email: customer.email.trim().toLowerCase(), customer_phone: customer.phone.trim(), total_aoa: subtotal + shipping - discount, status: 'awaiting_payment', payment_method: paymentMethod?.name ?? null, user_id: user?.id ?? null, items: items.map((item) => ({ product_name: item.name, quantity: item.qty, subtotal_aoa: item.subtotal })) },
+      { id: orderId, order_number: orderNumber, tracking_token: trackingToken, customer_name: `${customer.firstName} ${customer.lastName}`.trim(), customer_email: customer.email.trim().toLowerCase(), customer_phone: customer.phone.trim(), total_aoa: subtotal + shipping - discount, status: 'awaiting_payment', payment_method: paymentMethod?.name ?? null, user_id: user?.id ?? null, items: items.map((item) => ({ product_name: item.name, quantity: item.qty, subtotal_aoa: item.subtotal, player_id: item.playerId, player_nickname: item.playerNickname })) },
       paymentMethod?.instructions ?? paymentMethod?.customer_message ?? '',
     ).catch((error) => console.error('[notifications] encomenda criada', error));
     response.status(201).json({ orderNumber, trackingToken, email: customer.email.trim().toLowerCase(), totalAoa: subtotal + shipping - discount, subtotalAoa: subtotal, shippingAoa: shipping, discountAoa: discount, couponCode: coupon?.code ?? null, invoiceTemplates: ['classic', 'modern'] });
@@ -549,7 +549,7 @@ app.get('/api/orders/:orderNumber', asyncRoute(async (request, response) => {
   }
   response.json({
     order: { order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, total_aoa: found.order.total_aoa, subtotal_aoa: found.order.subtotal_aoa, exchange_rate_usd_aoa: found.order.exchange_rate_usd_aoa, shipping_aoa: found.order.shipping_aoa, discount_aoa: found.order.discount_aoa, coupon_code: found.order.coupon_code, status: found.order.status, payment_status: found.order.payment_status, payment_method: found.order.payment_method, payment_reference: found.order.payment_reference, created_at: found.order.created_at, updated_at: found.order.updated_at, delivery_city: found.order.billing_city, delivery_province: found.order.billing_province },
-    items: found.items.map((item: any) => ({ product_name: item.product_name, variant_name: item.variant_name, quantity: item.quantity, unit_price_aoa: item.unit_price_aoa, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url, player_id: item.player_id })),
+    items: found.items.map((item: any) => ({ product_name: item.product_name, variant_name: item.variant_name, quantity: item.quantity, unit_price_aoa: item.unit_price_aoa, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url, player_id: item.player_id, player_nickname: item.player_nickname })),
     paymentMethod: found.paymentMethod,
     proofs: found.proofs,
     history: found.history,

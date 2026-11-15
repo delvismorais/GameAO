@@ -142,7 +142,7 @@ export function AdminOrders({ section }: { section: AdminSectionId }) {
           <div className="admin-detail__grid">
             <div>
               <h3>Artigos</h3>
-              <table className="admin-table"><thead><tr><th>Produto</th><th>Qtd.</th><th>Preço</th><th>Total</th></tr></thead><tbody>{detail.items.map((item) => <tr key={item.id}><td>{item.product_name}{item.variant_name ? ` · ${item.variant_name}` : ''}{item.player_id ? <small>ID jogador: {item.player_id} {item.player_nickname ? `(${item.player_nickname})` : ''}</small> : null}</td><td>{item.quantity}</td><td>{formatKz(item.unit_price_aoa)}</td><td>{formatKz(item.subtotal_aoa)}</td></tr>)}</tbody></table>
+              <table className="admin-table"><thead><tr><th>Produto</th><th>Dados para entrega</th><th>Qtd.</th><th>Preço</th><th>Total</th></tr></thead><tbody>{detail.items.map((item) => <tr key={item.id}><td>{item.product_name}{item.variant_name ? ` · ${item.variant_name}` : ''}</td><td>{item.player_id ? <span className="admin-player-data"><strong>{item.player_nickname || 'Nickname não disponível'}</strong><small>ID Free Fire: {item.player_id}</small></span> : <small>Sem ID de jogador</small>}</td><td>{item.quantity}</td><td>{formatKz(item.unit_price_aoa)}</td><td>{formatKz(item.subtotal_aoa)}</td></tr>)}</tbody></table>
               <h3>Entrega</h3>
               <p className="admin-detail__text">{detail.order.delivery_address || detail.order.billing_address || 'Sem endereço (produto digital)'}<br />{[detail.order.billing_city, detail.order.billing_province].filter(Boolean).join(', ')}{detail.order.delivery_date ? ` · ${shortDate(detail.order.delivery_date)}` : ''}</p>
               <h3>Notas internas</h3>

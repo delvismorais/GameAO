@@ -14,6 +14,7 @@ import { getStoredAffiliateCode, normalizeAffiliateCode } from '../lib/affiliate
 const PROVINCES = ['Bengo', 'Benguela', 'Bié', 'Cabinda', 'Cuando Cubango', 'Cuanza Norte', 'Cuanza Sul', 'Cunene', 'Huambo', 'Huíla', 'Luanda', 'Lunda Norte', 'Lunda Sul', 'Malanje', 'Moxico', 'Namibe', 'Uíge', 'Zaire'];
 const COUNTRIES = ['Angola', 'Portugal', 'Brasil', 'África do Sul', 'Namíbia', 'República Democrática do Congo', 'Zâmbia'];
 type PaymentMethod = { id: number; code: string; name: string; description: string; instructions: string; requires_proof: number; customer_message: string; payment_deadline_hours?: number; receiving_data?: Record<string, unknown> };
+type SavedPlayerId = { id: number; player_id: string; player_nickname: string; verified_at: string };
 const EMPTY_CUSTOMER: Customer = { firstName: '', lastName: '', company: '', country: 'Angola', address: '', apartment: '', city: '', province: 'Luanda', postalCode: '', phone: '', email: '', notes: '' };
 
 export function Checkout() {
@@ -36,12 +37,17 @@ export function Checkout() {
   const [variantSelection, setVariantSelection] = useState<Record<string, string>>({});
   const [playerIds, setPlayerIds] = useState<Record<string, string>>({});
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
+  const [savedPlayerIds, setSavedPlayerIds] = useState<SavedPlayerId[]>([]);
   const [verifyingPlayer, setVerifyingPlayer] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => { void fetch('/api/payment-methods').then((response) => response.ok ? response.json() : { methods: [] }).then((data: { methods?: PaymentMethod[] }) => { const methods = data.methods ?? []; setPaymentMethods(methods); setPaymentMethod((current) => current || methods[0]?.code || ''); }); }, []);
   useEffect(() => { try { sessionStorage.setItem('gameao-checkout-draft', JSON.stringify(customer)); } catch { /* armazenamento opcional */ } }, [customer]);
   useEffect(() => { if (user) setCustomer((current) => ({ ...current, firstName: current.firstName || user.name.split(' ')[0] || '', lastName: current.lastName || user.name.split(' ').slice(1).join(' '), email: current.email || user.email || '', phone: current.phone || user.phone || '' })); }, [user]);
+  useEffect(() => {
+    if (!user) { setSavedPlayerIds([]); return; }
+    void fetch('/api/account/freefire-ids', { credentials: 'include' }).then((response) => response.ok ? response.json() : { ids: [] }).then((data: { ids?: SavedPlayerId[] }) => setSavedPlayerIds(data.ids ?? [])).catch(() => setSavedPlayerIds([]));
+  }, [user]);
 
   const physicalLines = useMemo(() => cartLines.filter(({ product }) => product.categoryType === 'physical'), [cartLines]);
   const playerLines = useMemo(() => cartLines.filter(({ product }) => Boolean(product.requiresPlayerId) || (product.productSubtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(product.name))), [cartLines]);
@@ -73,7 +79,13 @@ export function Checkout() {
     try {
       const result = await fetch('/api/freefire/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId: playerIds[productId] }) });
       const data = await result.json().catch(() => ({})) as { nickname?: string; message?: string };
-      if (result.ok && data.nickname) { setPlayerNames((current) => ({ ...current, [productId]: data.nickname! })); showToast(`ID verificado: ${data.nickname}`, 'success'); }
+      if (result.ok && data.nickname) {
+        setPlayerNames((current) => ({ ...current, [productId]: data.nickname! }));
+        if (user) {
+          void fetch('/api/account/freefire-ids', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId: playerIds[productId], nickname: data.nickname }) }).then(() => fetch('/api/account/freefire-ids', { credentials: 'include' })).then((response) => response.ok ? response.json() : { ids: [] }).then((saved: { ids?: SavedPlayerId[] }) => setSavedPlayerIds(saved.ids ?? [])).catch(() => undefined);
+        }
+        showToast(`ID verificado: ${data.nickname}`, 'success');
+      }
       else showToast(data.message ?? 'Não foi possível verificar este ID.', 'error');
     } finally { setVerifyingPlayer(null); }
   };
@@ -112,7 +124,7 @@ export function Checkout() {
         </section>}
 
         {playerLines.length > 0 && <section className="checkout-section checkout-section--compact"><div className="checkout-section__intro"><span className="checkout-step">{hasPhysical ? '03' : '02'}</span><div><h2>Dados do jogador</h2><p>Alguns produtos precisam do ID da conta para serem entregues corretamente.</p></div></div>
-          {playerLines.map(({ product }) => <div className="checkout-product-data" key={product.id}><div className="checkout-product-data__heading"><strong>{product.name}</strong><span>ID obrigatório</span></div><div className="form-row"><label className="field"><span>ID do jogador *</span><input inputMode="numeric" value={playerIds[product.id] ?? ''} onChange={(event) => { setPlayerIds((current) => ({ ...current, [product.id]: event.target.value })); setPlayerNames((current) => ({ ...current, [product.id]: '' })); }} placeholder="ID numérico da conta" /></label><label className="field"><span>Nickname verificado</span><div className="checkout-inline-control"><input value={playerNames[product.id] ?? ''} readOnly placeholder="Ainda não verificado" /><button type="button" className="btn btn--outline btn--sm" disabled={verifyingPlayer === product.id || !playerIds[product.id]} onClick={() => void verifyPlayer(product.id)}>{verifyingPlayer === product.id ? 'A verificar…' : 'Verificar ID'}</button></div></label></div></div>)}
+          {playerLines.map(({ product }) => <div className="checkout-product-data" key={product.id}><div className="checkout-product-data__heading"><strong>{product.name}</strong><span>ID obrigatório</span></div>{savedPlayerIds.length > 0 && <label className="field"><span>Usar ID guardado</span><select value="" onChange={(event) => { const saved = savedPlayerIds.find((item) => item.player_id === event.target.value); if (!saved) return; setPlayerIds((current) => ({ ...current, [product.id]: saved.player_id })); setPlayerNames((current) => ({ ...current, [product.id]: saved.player_nickname })); }}><option value="">Selecionar do histórico…</option>{savedPlayerIds.map((saved) => <option key={saved.id} value={saved.player_id}>{saved.player_id} — {saved.player_nickname}</option>)}</select></label>}<div className="form-row"><label className="field"><span>ID do jogador *</span><input inputMode="numeric" value={playerIds[product.id] ?? ''} onChange={(event) => { setPlayerIds((current) => ({ ...current, [product.id]: event.target.value })); setPlayerNames((current) => ({ ...current, [product.id]: '' })); }} placeholder="ID numérico da conta" /></label><label className="field"><span>Nickname verificado automaticamente</span><div className="checkout-inline-control"><input value={playerNames[product.id] ?? ''} readOnly placeholder="Faça a consulta para obter o nickname" /><button type="button" className="btn btn--outline btn--sm" disabled={verifyingPlayer === product.id || !playerIds[product.id]} onClick={() => void verifyPlayer(product.id)}>{verifyingPlayer === product.id ? 'A verificar…' : playerNames[product.id] ? 'Verificar novamente' : 'Consultar ID'}</button></div></label></div>{playerNames[product.id] && <p className="checkout-verified-note">✓ Conta confirmada: <strong>{playerNames[product.id]}</strong>. Este ID e nickname serão enviados com a encomenda.</p>}</div>)}
         </section>}
 
         <section className="checkout-section checkout-section--compact"><div className="checkout-section__intro"><span className="checkout-step">{hasPhysical || playerLines.length ? '04' : '02'}</span><div><h2>Produtos e observações</h2><p>Reveja variantes e deixe uma nota, se necessário.</p></div></div>
