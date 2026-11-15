@@ -37,7 +37,8 @@ export default function App() {
           <BrowserRouter>
             <Layout>
               <Routes>
-                <Route path="/" element={<Home1 />} />
+                <Route path="/" element={<Home2 />} />
+                <Route path="/homepage-1" element={<Home1 />} />
                 <Route path="/homepage-2" element={<Home2 />} />
                 <Route path="/shop" element={<Shop />} />
                 <Route path="/product-category/:slug" element={<Category />} />

@@ -33,8 +33,8 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
         </div>
         <nav className="mobile-menu__nav" aria-label="Menu mobile">
           <p className="mobile-menu__label">Navegação</p>
-          <Link to="/" onClick={onClose}>Página Inicial 1</Link>
-          <Link to="/homepage-2" onClick={onClose}>Página Inicial 2</Link>
+          <Link to="/" onClick={onClose}>Página Inicial 2</Link>
+          <Link to="/homepage-1" onClick={onClose}>Página Inicial 1</Link>
           <Link to="/shop" onClick={onClose}>Loja</Link>
           <Link to="/category/news" onClick={onClose}>Notícias</Link>
           <Link to="/product-category/featured" onClick={onClose}>Destaques</Link>

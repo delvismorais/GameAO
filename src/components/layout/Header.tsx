@@ -52,8 +52,8 @@ export function Header({ onOpenCart, onOpenSearch, onOpenMenu }: HeaderProps) {
                 Início <Icon name="arrowDown" className="nav-caret" />
               </NavLink>
               <ul className="sub-menu">
-                <li><Link to="/">Página Inicial 1</Link></li>
-                <li><Link to="/homepage-2">Página Inicial 2</Link></li>
+                <li><Link to="/">Página Inicial 2</Link></li>
+                <li><Link to="/homepage-1">Página Inicial 1</Link></li>
               </ul>
             </li>
             <li className="has-sub">
