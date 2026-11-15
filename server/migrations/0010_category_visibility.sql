@@ -1,0 +1,2 @@
+ALTER TABLE catalog_categories
+  ADD COLUMN IF NOT EXISTS show_on_home SMALLINT NOT NULL DEFAULT 1;

@@ -28,7 +28,7 @@ export function registerAdminModuleRoutes(app: Express, deps: RouteDeps): void {
     const slug = slugify(text(request.body?.slug, 120) || name);
     if (!name || !slug) { response.status(400).json({ error: 'invalid_category', message: 'Nome e slug são obrigatórios.' }); return; }
     try {
-      await getPool().execute(`INSERT INTO catalog_categories (slug, name, description, image_url, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`, [slug, name, text(request.body?.description, 2000) || null, text(request.body?.image, 500) || null, request.body?.isActive === false ? 0 : 1, Number(request.body?.sortOrder ?? 0)]);
+      await getPool().execute(`INSERT INTO catalog_categories (slug, name, description, image_url, is_active, show_on_home, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`, [slug, name, text(request.body?.description, 2000) || null, text(request.body?.image, 500) || null, request.body?.isActive === false ? 0 : 1, request.body?.showOnHome === false ? 0 : 1, Number(request.body?.sortOrder ?? 0)]);
     } catch { response.status(409).json({ error: 'duplicate_category', message: 'Já existe uma categoria com este slug.' }); return; }
     await deps.recordAudit(admin.id, 'category.create', 'catalog_category', slug, { name });
     response.status(201).json({ ok: true, slug });
@@ -39,8 +39,8 @@ export function registerAdminModuleRoutes(app: Express, deps: RouteDeps): void {
     const admin = await deps.requireAdmin(request, response); if (!admin) return;
     const body = request.body ?? {};
     const fields: Array<[string, unknown]> = [];
-    for (const [input, column] of [['name', 'name'], ['slug', 'slug'], ['description', 'description'], ['image', 'image_url'], ['sortOrder', 'sort_order'], ['isActive', 'is_active']] as const) {
-      if (input in body) fields.push([column, input === 'isActive' ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
+    for (const [input, column] of [['name', 'name'], ['slug', 'slug'], ['description', 'description'], ['image', 'image_url'], ['sortOrder', 'sort_order'], ['isActive', 'is_active'], ['showOnHome', 'show_on_home']] as const) {
+      if (input in body) fields.push([column, input === 'isActive' || input === 'showOnHome' ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
     }
     if (!fields.length) { response.status(400).json({ error: 'empty_update', message: 'Nenhum campo alterado.' }); return; }
     await getPool().execute(`UPDATE catalog_categories SET ${fields.map(([column]) => `"${column}" = ?`).join(', ')}, updated_at = NOW() WHERE id = ?`, [...fields.map(([, value]) => value), Number(request.params.id)]);

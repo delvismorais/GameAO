@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CATEGORIES } from '../../data/products';
 import { CONTACT_INFO, FOOTER_TAGS, SOCIALS } from '../../data/site';
@@ -9,7 +10,15 @@ import { useToast } from '../../context/ToastContext';
 
 export function Footer() {
   const { showToast } = useToast();
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const blogPosts = POSTS.slice(0, 2);
+  useEffect(() => {
+    void fetch('/api/site/config').then((response) => response.ok ? response.json() : null).then((data: { socials?: Array<{ label?: string; url?: string; href?: string }> } | null) => {
+      const next: Record<string, string> = {};
+      for (const item of data?.socials ?? []) if (item.label && (item.url || item.href)) next[item.label.toLowerCase()] = item.url || item.href || '';
+      setSocialLinks(next);
+    }).catch(() => undefined);
+  }, []);
   return (
     <footer className="site-footer">
       <div className="container site-footer__grid">
@@ -30,7 +39,7 @@ export function Footer() {
               <button
                 key={social.label}
                 type="button"
-                onClick={() => showToast('As redes sociais serão geridas nas Configurações.', 'info')}
+                onClick={() => { const href = socialLinks[social.label.toLowerCase()]; if (href) window.open(href, '_blank', 'noopener,noreferrer'); else showToast('Esta rede social ainda não foi configurada.', 'info'); }}
                 aria-label={social.label}
               >
                 <Icon name={social.icon} />

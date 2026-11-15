@@ -5,7 +5,7 @@ import { useSettings } from '../../context/SettingsContext';
 import type { AdminSectionId } from './adminNav';
 
 type Product = { id: string; name: string; slug: string; basePriceUsd: number; salePriceUsd?: number | null | undefined; isActive: boolean; image: string; imageCard?: string; categoryType?: 'digital' | 'physical'; productSubtype?: string; requiresPlayerId?: boolean; shippingCostAoa?: number; platform?: string; shortDescription?: string; isDynamic?: boolean; stockQuantity?: number | null; lowStockThreshold?: number; hot?: boolean; featuredOrder?: number; dealOrder?: number };
-type Category = { id: number; slug: string; name: string; description?: string; image_url?: string; is_active: number; sort_order: number; product_count: number };
+type Category = { id: number; slug: string; name: string; description?: string; image_url?: string; is_active: number; show_on_home?: number; sort_order: number; product_count: number };
 
 export function AdminProductsSection({ section }: { section: AdminSectionId }) {
   const { rate } = useSettings();
@@ -28,14 +28,16 @@ function AdminCategories() {
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState('');
   const [tone, setTone] = useState<'success' | 'error'>('success');
-  const [form, setForm] = useState({ name: '', slug: '', description: '', image: '', sortOrder: 0, isActive: true });
-  const openCreate = () => { setForm({ name: '', slug: '', description: '', image: '', sortOrder: 0, isActive: true }); setCreating(true); };
-  const openEdit = (category: Category) => { setForm({ name: category.name, slug: category.slug, description: category.description ?? '', image: category.image_url ?? '', sortOrder: category.sort_order, isActive: Boolean(category.is_active) }); setEditing(category); };
+  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState({ name: '', slug: '', description: '', image: '', sortOrder: 0, isActive: true, showOnHome: true });
+  const openCreate = () => { setForm({ name: '', slug: '', description: '', image: '', sortOrder: 0, isActive: true, showOnHome: true }); setCreating(true); };
+  const openEdit = (category: Category) => { setForm({ name: category.name, slug: category.slug, description: category.description ?? '', image: category.image_url ?? '', sortOrder: category.sort_order, isActive: Boolean(category.is_active), showOnHome: category.show_on_home !== 0 }); setEditing(category); };
   const save = async () => {
     const result = editing ? await api(`/api/admin/categories/${editing.id}`, { method: 'PUT', body: JSON.stringify(form) }) : await api('/api/admin/categories', { method: 'POST', body: JSON.stringify(form) });
     setMessage(result.ok ? 'Categoria guardada.' : result.error ?? 'Não foi possível guardar.'); setTone(result.ok ? 'success' : 'error');
     if (result.ok) { setEditing(null); setCreating(false); await reload(); }
   };
+  const uploadImage = async (file: File) => { setUploading(true); const body = new FormData(); body.append('file', file); body.append('kind', 'site'); const result = await api<{ url?: string }>('/api/admin/media', { method: 'POST', body }); setUploading(false); if (result.ok && result.data.url) setForm((current) => ({ ...current, image: result.data.url! })); else { setMessage(result.error ?? 'Não foi possível enviar a imagem.'); setTone('error'); } };
   const deactivate = async (category: Category) => {
     if (!window.confirm(`Desativar a categoria ${category.name}?`)) return;
     const result = await api(`/api/admin/categories/${category.id}`, { method: 'DELETE' });
@@ -44,14 +46,14 @@ function AdminCategories() {
   };
   return <AdminSection title="Categorias" subtitle="Categorias usadas na navegação pública e nos filtros da loja." actions={<button type="button" className="btn btn--primary btn--sm" onClick={openCreate}>Nova categoria</button>}>
     <Notice message={message} tone={tone} />
-    <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Nome</th><th>Slug</th><th>Produtos</th><th>Ordem</th><th>Estado</th><th /></tr></thead><tbody>{loading ? <tr><td colSpan={6}><Empty>A carregar…</Empty></td></tr> : data?.categories.map((category) => <tr key={category.id}><td><strong>{category.name}</strong><small>{category.description}</small></td><td>{category.slug}</td><td>{category.product_count}</td><td>{category.sort_order}</td><td><Badge tone={category.is_active ? 'success' : 'muted'}>{category.is_active ? 'Ativa' : 'Inativa'}</Badge></td><td><div className="admin-row-actions"><button type="button" className="btn btn--outline btn--sm" onClick={() => openEdit(category)}>Editar</button>{category.is_active ? <button type="button" className="btn btn--outline btn--sm" onClick={() => void deactivate(category)}>Desativar</button> : null}</div></td></tr>)}</tbody></table></div>
+    <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Nome</th><th>Slug</th><th>Produtos</th><th>Homepage</th><th>Estado</th><th /></tr></thead><tbody>{loading ? <tr><td colSpan={6}><Empty>A carregar…</Empty></td></tr> : data?.categories.map((category) => <tr key={category.id}><td><strong>{category.name}</strong><small>{category.description}</small></td><td>{category.slug}</td><td>{category.product_count}</td><td><Badge tone={category.show_on_home === 0 ? 'muted' : 'info'}>{category.show_on_home === 0 ? 'Oculta' : 'Visível'}</Badge></td><td><Badge tone={category.is_active ? 'success' : 'muted'}>{category.is_active ? 'Ativa' : 'Inativa'}</Badge></td><td><div className="admin-row-actions"><button type="button" className="btn btn--outline btn--sm" onClick={() => openEdit(category)}>Editar</button>{category.is_active ? <button type="button" className="btn btn--outline btn--sm" onClick={() => void deactivate(category)}>Desativar</button> : null}</div></td></tr>)}</tbody></table></div>
     <Modal open={creating || Boolean(editing)} title={editing ? `Editar ${editing.name}` : 'Nova categoria'} onClose={() => { setCreating(false); setEditing(null); }}>
       <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <Field label="Nome *"><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
         <Field label="Slug" hint="Deixe vazio para gerar automaticamente."><input value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} /></Field>
         <Field label="Descrição"><textarea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></Field>
-        <div className="form-row"><Field label="Imagem (URL)"><input value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /></Field><Field label="Ordem"><input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} /></Field></div>
-        <label className="admin-check"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Ativa</label>
+        <div className="form-row"><Field label="Imagem (URL)"><input value={form.image} onChange={(event) => setForm({ ...form, image: event.target.value })} /><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(file); event.target.value = ''; }} /></Field><Field label="Ordem"><input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} /></Field></div>
+        <label className="admin-check"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Ativa</label><label className="admin-check"><input type="checkbox" checked={form.showOnHome} onChange={(event) => setForm({ ...form, showOnHome: event.target.checked })} /> Exibir na homepage</label>
         <div className="admin-form__actions"><button type="submit" className="btn btn--primary">Guardar</button><button type="button" className="btn btn--outline" onClick={() => { setCreating(false); setEditing(null); }}>Cancelar</button></div>
       </form>
     </Modal>

@@ -694,8 +694,14 @@ app.post('/api/admin/products', asyncRoute(async (request, response) => {
   );
   await getPool().execute(
     `UPDATE catalog_products SET category_type = ?, product_subtype = ?, requires_player_id = ?, sub_category = ?, shipping_cost_aoa = ?, additional_images_json = ?, video_url = ?, is_dynamic = ?, stock_quantity = ?, low_stock_threshold = ?, related_products_json = ?, seo_title = ?, seo_description = ? WHERE id = ?`,
-    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.requiresPlayerId ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, body.stockQuantity == null || body.stockQuantity === '' ? null : Math.max(0, Number(body.stockQuantity)), Math.max(0, Number(body.lowStockThreshold ?? 5)), JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : []), typeof body.seoTitle === 'string' ? body.seoTitle.trim() || null : null, typeof body.seoDescription === 'string' ? body.seoDescription.trim() || null : null, id],
+    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.requiresPlayerId && /free\s*fire/i.test(`${body.platform ?? ''} ${body.name ?? ''} ${body.subCategory ?? ''}`) ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, body.stockQuantity == null || body.stockQuantity === '' ? null : Math.max(0, Number(body.stockQuantity)), Math.max(0, Number(body.lowStockThreshold ?? 5)), JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : []), typeof body.seoTitle === 'string' ? body.seoTitle.trim() || null : null, typeof body.seoDescription === 'string' ? body.seoDescription.trim() || null : null, id],
   );
+  if (Array.isArray(body.categoryIds)) {
+    await getPool().execute(`DELETE FROM catalog_product_categories WHERE product_id = ?`, [id]);
+    for (const categoryId of body.categoryIds.slice(0, 8).map(Number).filter((value: number) => Number.isInteger(value) && value > 0)) {
+      await getPool().execute(`INSERT INTO catalog_product_categories (product_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, [id, categoryId]);
+    }
+  }
   await recordAudit(user.id, 'create', 'product', id, { name, slug });
   response.status(201).json({ product: (await readCatalogProducts(true)).find((product) => product.id === id) });
 }));
@@ -709,12 +715,18 @@ app.put('/api/admin/products/:id', asyncRoute(async (request, response) => {
   const fields: Array<[string, string | number | null]> = [];
   const allowed: Record<string, string> = { name: 'name', slug: 'slug', basePriceUsd: 'base_price_usd', salePriceUsd: 'sale_price_usd', image: 'image_url', imageCard: 'image_card_url', shortDescription: 'short_description', releaseYear: 'release_year', developer: 'developer', platform: 'platform', hot: 'is_hot', shopOrder: 'shop_order', isActive: 'is_active', categoryType: 'category_type', productSubtype: 'product_subtype', requiresPlayerId: 'requires_player_id', subCategory: 'sub_category', shippingCostAoa: 'shipping_cost_aoa', videoUrl: 'video_url', isDynamic: 'is_dynamic', stockQuantity: 'stock_quantity', lowStockThreshold: 'low_stock_threshold', seoTitle: 'seo_title', seoDescription: 'seo_description' };
   for (const [input, column] of Object.entries(allowed)) {
-    if (input in body) fields.push([column, ['hot', 'isActive', 'requiresPlayerId', 'isDynamic'].includes(input) ? (body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
+    if (input in body) fields.push([column, ['hot', 'isActive', 'requiresPlayerId', 'isDynamic'].includes(input) ? (body[input] && (input !== 'requiresPlayerId' || /free\s*fire/i.test(`${body.platform ?? ''} ${body.name ?? ''} ${body.subCategory ?? ''}`)) ? 1 : 0) : body[input] === '' ? null : body[input]]);
   }
   if ('tags' in body) fields.push(['tags_json', JSON.stringify(Array.isArray(body.tags) ? body.tags : [])]);
   if ('description' in body) fields.push(['description_json', JSON.stringify(Array.isArray(body.description) ? body.description : [])]);
   if ('additionalImages' in body) fields.push(['additional_images_json', JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : [])]);
   if ('relatedProducts' in body) fields.push(['related_products_json', JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : [])]);
+  if (Array.isArray(body.categoryIds)) {
+    await getPool().execute(`DELETE FROM catalog_product_categories WHERE product_id = ?`, [id]);
+    for (const categoryId of body.categoryIds.slice(0, 8).map(Number).filter((value: number) => Number.isInteger(value) && value > 0)) {
+      await getPool().execute(`INSERT INTO catalog_product_categories (product_id, category_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, [id, categoryId]);
+    }
+  }
   if (fields.length === 0) {
     response.status(400).json({ error: 'empty_update', message: 'Nenhum campo foi alterado.' });
     return;
