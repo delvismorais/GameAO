@@ -14,13 +14,12 @@ import {
   CATEGORIES,
   getEffectivePriceUsd,
   getProductBySlug,
-  SHOP_PRODUCTS,
 } from '../data/products';
 
 export function Product() {
   const { slug } = useParams();
-  const product = slug ? getProductBySlug(slug) : undefined;
-  const { addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, reviews, addReview } = useStore();
+  const { catalogProducts, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, reviews, addReview } = useStore();
+  const product = slug ? catalogProducts.find((item) => item.slug === slug) ?? getProductBySlug(slug) : undefined;
   const { showToast } = useToast();
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState('description');
@@ -47,13 +46,13 @@ export function Product() {
 
   const related = useMemo(() => {
     if (!product) return [];
-    const sameCategory = SHOP_PRODUCTS.filter(
+    const sameCategory = catalogProducts.filter(
       (item) =>
         item.id !== product.id &&
         item.categories.some((category) => product.categories.includes(category)),
     );
     return sameCategory.slice(0, 6);
-  }, [product]);
+  }, [catalogProducts, product]);
 
   if (!product) return <Navigate to="/shop" replace />;
 

@@ -6,6 +6,7 @@ import { Icon } from '../ui/Icon';
 import { EmptyState } from '../ui/EmptyState';
 import { ProductGrid } from './ProductGrid';
 import { useSettings } from '../../context/SettingsContext';
+import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';
 import { formatDatePt, formatUsdAsAoa, usdToAoa } from '../../lib/pricing';
 import { normalizeText } from '../../lib/storage';
@@ -13,9 +14,7 @@ import {
   CATEGORIES,
   getCategoryBySlug,
   getEffectivePriceUsd,
-  productsInCategory,
-  SHOP_PRODUCTS,
-  type CategorySlug,
+    type CategorySlug,
   type Product,
 } from '../../data/products';
 import { POSTS } from '../../data/posts';
@@ -38,6 +37,7 @@ const PER_PAGE_OPTIONS = [12, 16, 20, 24];
 export function ShopView({ category }: ShopViewProps) {
   const [params, setParams] = useSearchParams();
   const { rate } = useSettings();
+  const { catalogProducts } = useStore();
   const { showToast } = useToast();
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -71,12 +71,12 @@ export function ShopView({ category }: ShopViewProps) {
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
-    SHOP_PRODUCTS.forEach((product) => product.tags.forEach((item) => tags.add(item)));
+    catalogProducts.forEach((product) => product.tags.forEach((item) => tags.add(item)));
     return Array.from(tags).sort((a, b) => a.localeCompare(b, 'pt'));
-  }, []);
+  }, [catalogProducts]);
 
   const filtered = useMemo(() => {
-    let list: Product[] = [...SHOP_PRODUCTS];
+    let list: Product[] = [...catalogProducts];
 
     if (category) list = list.filter((product) => product.categories.includes(category));
     if (catParam) list = list.filter((product) => product.categories.includes(catParam as CategorySlug));
@@ -125,7 +125,7 @@ export function ShopView({ category }: ShopViewProps) {
     }
 
     return list;
-  }, [category, catParam, q, tag, rating, min, max, sort, rate]);
+  }, [category, catParam, q, tag, rating, min, max, sort, rate, catalogProducts]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const currentPage = Math.min(page, totalPages);
@@ -167,15 +167,15 @@ export function ShopView({ category }: ShopViewProps) {
         <h3 className="widget__title">Categorias de Produtos</h3>
         <ul className="widget-list widget-list--categories">
           <li className={!category && !catParam ? 'is-active' : ''}>
-            <Link to="/shop">Todos os jogos <span>{SHOP_PRODUCTS.length}</span></Link>
+            <Link to="/shop">Todos os produtos <span>{catalogProducts.length}</span></Link>
           </li>
           {CATEGORIES.map((item) => (
             <li
               key={item.slug}
               className={category === item.slug || catParam === item.slug ? 'is-active' : ''}
             >
-              <Link to={`/product-category/${item.slug}`}>
-                {item.name} <span>{productsInCategory(item.slug).length}</span>
+                <Link to={`/product-category/${item.slug}`}>
+                {item.name} <span>{catalogProducts.filter((product) => product.categories.includes(item.slug)).length}</span>
               </Link>
             </li>
           ))}
@@ -219,7 +219,7 @@ export function ShopView({ category }: ShopViewProps) {
         <h3 className="widget__title">Filtrar por Avaliação</h3>
         <ul className="rating-filter">
           {[5, 4, 3, 2, 1].map((stars) => {
-            const count = SHOP_PRODUCTS.filter((product) => Math.round(product.rating) >= stars).length;
+            const count = catalogProducts.filter((product) => Math.round(product.rating) >= stars).length;
             return (
               <li key={stars} className={rating === stars ? 'is-active' : ''}>
                 <button
@@ -230,7 +230,7 @@ export function ShopView({ category }: ShopViewProps) {
                     {'★'.repeat(stars)}
                     <span className="rating-filter__off">{'★'.repeat(5 - stars)}</span>
                   </span>
-                  <span className="rating-filter__count">({count})</span>
+              <span className="rating-filter__count">({count})</span>
                 </button>
               </li>
             );

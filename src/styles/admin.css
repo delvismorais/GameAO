@@ -8,3 +8,32 @@
 @media(max-width:640px){.admin-kpis,.admin-kpis--compact{grid-template-columns:1fr 1fr}.admin-detail__summary{grid-template-columns:1fr 1fr}.admin-media-grid,.admin-media-library{grid-template-columns:1fr 1fr}.admin-bars__row{grid-template-columns:110px minmax(0,1fr) 34px}}
 
 .admin-player-data{display:grid;gap:3px;min-width:150px;padding:6px 8px;border-left:3px solid var(--primary);background:#fff8f2}.admin-player-data strong{font-size:12px}.admin-player-data small{color:var(--muted);font-size:10px}
+
+/* Desktop workspace: a calmer, bounded canvas that keeps dense admin pages legible. */
+@media (min-width:1025px){
+  .admin-shell{grid-template-columns:264px minmax(0,1fr);gap:0;max-width:1540px;min-height:calc(100vh - 132px);margin:0 auto;border:1px solid #dfe5eb;border-radius:12px;overflow:hidden;background:#f5f7fa;box-shadow:0 18px 55px rgba(8,16,24,.10);align-items:stretch}
+  .admin-sidebar{position:sticky;top:0;height:calc(100vh - 132px);min-height:680px;border:0;border-right:1px solid #1c2c38;background:#071018}
+  .admin-sidebar .admin-nav{padding:18px 14px}
+  .admin-nav__identity{padding:8px 10px 18px}
+  .admin-nav__identity img{width:138px}
+  .admin-main{min-width:0;padding:0 34px 48px;background:#f5f7fa}
+  .admin-topbar{min-height:72px;margin:0 -34px 28px;padding:0 34px;background:rgba(255,255,255,.96);border-bottom:1px solid #dfe5eb}
+  .admin-topbar__crumb{font-size:13px}
+  .admin-topbar__tools{gap:18px}
+  .admin-head--inner{margin-bottom:24px}
+  .admin-head--inner h1,.admin-head h1{font-size:28px;letter-spacing:-.02em}
+  .admin-kpis{gap:16px;margin-bottom:24px}
+  .admin-kpis button,.admin-kpis article{min-height:112px;padding:18px;border-radius:8px;box-shadow:0 5px 18px rgba(8,16,24,.06)}
+  .admin-card{border-radius:8px;box-shadow:0 5px 18px rgba(8,16,24,.055)}
+  .admin-card__head{align-items:center;margin-bottom:22px;padding-bottom:16px}
+  .admin-card__head h2{font-size:18px}
+  .admin-dashboard__grid,.admin-operations-grid{gap:18px}
+  .admin-table-wrap{border-radius:7px;background:#fff}
+  .admin-table th{padding:12px 14px}
+  .admin-table td{padding:13px 14px}
+  .admin-toolbar{grid-template-columns:minmax(0,2fr) minmax(150px,1fr) minmax(150px,1fr);gap:10px}
+  .admin-modal{padding:32px}
+  .admin-modal__panel{border-radius:10px}
+  .admin-modal__panel header{padding:18px 22px}
+  .admin-modal__body{padding:22px}
+}

@@ -13,6 +13,7 @@ import { usdToAoa } from '../lib/pricing';
 import {
   getEffectivePriceUsd,
   getProductById,
+  SHOP_PRODUCTS,
   type Product,
 } from '../data/products';
 import { SEED_REVIEWS, type Review } from '../data/reviews';
@@ -77,6 +78,7 @@ export interface BlogComment {
 }
 
 interface StoreContextValue {
+  catalogProducts: Product[];
   cart: CartLine[];
   cartCount: number;
   cartLines: { product: Product; qty: number }[];
@@ -305,6 +307,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [cart, serverProducts],
   );
 
+  const catalogProducts = useMemo(
+    () => (serverProducts.length ? [...serverProducts].sort((a, b) => a.shopOrder - b.shopOrder) : SHOP_PRODUCTS),
+    [serverProducts],
+  );
+
   const cartSubtotalUsd = useMemo(
     () =>
       cartLines.reduce(
@@ -394,6 +401,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<StoreContextValue>(
     () => ({
+      catalogProducts,
       cart,
       cartCount,
       cartLines,
@@ -423,6 +431,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addComment,
     }),
     [
+      catalogProducts,
       cart,
       cartCount,
       cartLines,

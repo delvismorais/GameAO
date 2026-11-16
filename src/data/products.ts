@@ -1,4 +1,4 @@
-export type CategorySlug = 'game' | 'xbox' | 'playstation' | 'pc' | 'featured';
+export type CategorySlug = 'game' | 'xbox' | 'playstation' | 'pc' | 'featured' | 'free-fire' | 'roblox' | 'premium' | 'accessories';
 
 export interface Category {
   slug: CategorySlug;
@@ -12,6 +12,10 @@ export const CATEGORIES: Category[] = [
   { slug: 'playstation', name: 'PlayStation', description: 'Jogos para PlayStation 4 e PlayStation 5.' },
   { slug: 'pc', name: 'PC', description: 'Jogos para PC — Steam, Epic Games e outras lojas.' },
   { slug: 'featured', name: 'Destaques', description: 'Os títulos em destaque escolhidos pela equipa GameAO.' },
+  { slug: 'free-fire', name: 'Free Fire', description: 'Diamantes, assinaturas, passes e produtos Free Fire.' },
+  { slug: 'roblox', name: 'Roblox', description: 'Robux e cartões presente para Roblox.' },
+  { slug: 'premium', name: 'Assinaturas Premium', description: 'Serviços e subscrições digitais.' },
+  { slug: 'accessories', name: 'Acessórios', description: 'Acessórios gamer e produtos físicos.' },
 ];
 
 export interface Product {

@@ -7,6 +7,7 @@ import { DealsSection } from '../components/shop/DealsSection';
 import { ProductGrid } from '../components/shop/ProductGrid';
 import { BlogSection } from '../components/blog/BlogSection';
 import { SectionHeading } from '../components/ui/SectionHeading';
+import { useStore } from '../context/StoreContext';
 import {
   DEAL_PRODUCTS,
   FEATURED_PRODUCTS,
@@ -27,6 +28,13 @@ const HOME_TABS: CarouselTab[] = [
 ];
 
 export function Home2() {
+  const { catalogProducts } = useStore();
+  const featuredProducts = catalogProducts.filter((product) => product.hot || product.featuredOrder !== undefined).slice(0, 10);
+  const dealProducts = catalogProducts.filter((product) => product.salePriceUsd !== undefined && product.salePriceUsd < product.basePriceUsd).slice(0, 10);
+  const recentProducts = [...catalogProducts].sort((a, b) => a.shopOrder - b.shopOrder).slice(0, 10);
+  const featured = featuredProducts.length ? featuredProducts : FEATURED_PRODUCTS;
+  const deals = dealProducts.length ? dealProducts : DEAL_PRODUCTS;
+  const recent = recentProducts.length ? recentProducts : RECENT_PRODUCTS;
   return (
     <div className="home home--dark">
       <HeroSlider slides={HOME2_SLIDES} />
@@ -34,17 +42,17 @@ export function Home2() {
       <ProductCarousel
         id="featured-games"
         title="Jogos em Destaque"
-        products={FEATURED_PRODUCTS}
+        products={featured}
         tabs={HOME_TABS}
         variant="dark"
       />
-      <DealsSection products={DEAL_PRODUCTS} variant="dark" />
+      <DealsSection products={deals} variant="dark" />
       <PromoGlider promos={HOME2_PROMOS} />
       <PreorderBanner data={HOME2_PREORDER} />
       <section className="home-section recent-games home-section--dark">
         <div className="container">
           <SectionHeading title="Jogos Recentes" />
-          <ProductGrid products={RECENT_PRODUCTS} columns={5} variant="dark" />
+          <ProductGrid products={recent} columns={5} variant="dark" />
         </div>
       </section>
       <BlogSection variant="dark" />

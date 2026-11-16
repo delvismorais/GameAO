@@ -7,6 +7,7 @@ import { DealsSection } from '../components/shop/DealsSection';
 import { ProductGrid } from '../components/shop/ProductGrid';
 import { BlogSection } from '../components/blog/BlogSection';
 import { SectionHeading } from '../components/ui/SectionHeading';
+import { useStore } from '../context/StoreContext';
 import {
   DEAL_PRODUCTS,
   FEATURED_PRODUCTS,
@@ -27,6 +28,10 @@ const HOME_TABS: CarouselTab[] = [
 ];
 
 export function Home1() {
+  const { catalogProducts } = useStore();
+  const featured = catalogProducts.filter((product) => product.hot || product.featuredOrder !== undefined).slice(0, 10);
+  const deals = catalogProducts.filter((product) => product.salePriceUsd !== undefined && product.salePriceUsd < product.basePriceUsd).slice(0, 10);
+  const recent = [...catalogProducts].sort((a, b) => a.shopOrder - b.shopOrder).slice(0, 10);
   return (
     <div className="home home--light">
       <HeroSlider slides={HOME1_SLIDES} />
@@ -34,16 +39,16 @@ export function Home1() {
       <ProductCarousel
         id="featured-games"
         title="Jogos em Destaque"
-        products={FEATURED_PRODUCTS}
+        products={featured.length ? featured : FEATURED_PRODUCTS}
         tabs={HOME_TABS}
       />
-      <DealsSection products={DEAL_PRODUCTS} />
+      <DealsSection products={deals.length ? deals : DEAL_PRODUCTS} />
       <PromoGlider promos={HOME1_PROMOS} />
       <PreorderBanner data={HOME1_PREORDER} />
       <section className="home-section recent-games">
         <div className="container">
           <SectionHeading title="Jogos Recentes" />
-          <ProductGrid products={RECENT_PRODUCTS} columns={5} />
+          <ProductGrid products={recent.length ? recent : RECENT_PRODUCTS} columns={5} />
         </div>
       </section>
       <BlogSection />
