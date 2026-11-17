@@ -6,12 +6,12 @@ type Template = { id: number; event_key: string; channel: string; name: string; 
 type Delivery = { id: number; event_key: string; channel: string; recipient: string; status: string; subject?: string; error_message?: string; created_at: string };
 type Tab = 'alerts' | 'templates' | 'deliveries' | 'test';
 
-const CHANNELS = [{ id: 'email', label: 'Email' }, { id: 'whatsapp', label: 'WhatsApp' }, { id: 'in_app', label: 'Notificação interna' }];
+const CHANNELS = [{ id: 'email', label: 'Email' }, { id: 'whatsapp', label: 'WhatsApp' }, { id: 'sms', label: 'SMS' }, { id: 'in_app', label: 'Notificação interna' }];
 const VARIABLES = ['{{site_name}}', '{{site_url}}', '{{customer_name}}', '{{customer_email}}', '{{order_number}}', '{{order_total}}', '{{order_status}}', '{{order_items}}', '{{order_link}}', '{{payment_method}}', '{{payment_instructions}}', '{{reset_link}}', '{{admin_link}}', '{{affiliate_code}}', '{{commission}}', '{{payout_amount}}', '{{admin_note}}'];
 
 export function AdminNotifications() {
   const [tab, setTab] = useState<Tab>('alerts');
-  return <AdminSection title="Centro de notificações" subtitle="Alertas administrativos, modelos por evento e histórico de entregas em email, WhatsApp e notificações internas." actions={<Tabs tabs={[{ id: 'alerts', label: 'Alertas' }, { id: 'templates', label: 'Modelos' }, { id: 'deliveries', label: 'Entregas' }, { id: 'test', label: 'Enviar teste' }]} active={tab} onChange={(id) => setTab(id as Tab)} />}>
+  return <AdminSection title="Centro de notificações" subtitle="Alertas administrativos, modelos por evento e histórico de entregas em email, SMS, WhatsApp e notificações internas." actions={<Tabs tabs={[{ id: 'alerts', label: 'Alertas' }, { id: 'templates', label: 'Modelos' }, { id: 'deliveries', label: 'Entregas' }, { id: 'test', label: 'Enviar teste' }]} active={tab} onChange={(id) => setTab(id as Tab)} />}>
     {tab === 'alerts' && <Alerts />}
     {tab === 'templates' && <Templates />}
     {tab === 'deliveries' && <Deliveries />}
@@ -82,9 +82,9 @@ function TestSender() {
   return <form className="admin-form admin-form--narrow" onSubmit={(event) => { event.preventDefault(); void send(); }}>
     <Field label="Evento"><select value={eventKey} onChange={(event) => setEventKey(event.target.value)}>{events.map((event) => <option key={event} value={event}>{event}</option>)}</select></Field>
     <Field label="Canal"><select value={channel} onChange={(event) => setChannel(event.target.value)}>{CHANNELS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
-    <Field label="Destinatário" hint="Deixe vazio para usar o email da sua conta."><input value={to} onChange={(event) => setTo(event.target.value)} placeholder="email@exemplo.com" /></Field>
+    <Field label="Destinatário" hint="Para SMS, use um número com indicativo ou os 9 dígitos nacionais."><input value={to} onChange={(event) => setTo(event.target.value)} placeholder={channel === 'sms' ? '973929712' : 'email@exemplo.com'} /></Field>
     <button type="submit" className="btn btn--primary">Enviar notificação de teste</button>
     {result && <Notice message={result.message} tone={result.tone} />}
-    <p className="admin-message">O email requer SMTP configurado no servidor. O WhatsApp requer WhatsApp Business API. As notificações internas funcionam sempre.</p>
+    <p className="admin-message">O email requer SMTP, o WhatsApp requer WhatsApp Business API e o SMS utiliza a conta TelcoSMS de produção. As notificações internas funcionam sempre.</p>
   </form>;
 }

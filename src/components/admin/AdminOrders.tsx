@@ -64,7 +64,7 @@ export function AdminOrders({ section }: { section: AdminSectionId }) {
   const changeStatus = async (orderNumber: string, next: string) => {
     const result = await api<{ notifications?: Record<string, string> }>(`/api/admin/orders/${encodeURIComponent(orderNumber)}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
     if (!result.ok) { notify(result.error ?? 'Não foi possível atualizar o estado.', 'error'); return; }
-    notify(`Estado atualizado. Email: ${result.data.notifications?.email ?? '—'} · WhatsApp: ${result.data.notifications?.whatsapp ?? '—'} · Notificação interna: ${result.data.notifications?.in_app ?? '—'}.`);
+    notify(`Estado atualizado. Email: ${result.data.notifications?.email ?? '—'} · SMS: ${result.data.notifications?.sms ?? '—'} · WhatsApp: ${result.data.notifications?.whatsapp ?? '—'} · Notificação interna: ${result.data.notifications?.in_app ?? '—'}.`);
     await reload();
     if (detailNumber === orderNumber) await openDetail(orderNumber);
   };
@@ -88,7 +88,7 @@ export function AdminOrders({ section }: { section: AdminSectionId }) {
   };
 
   const resend = async (eventKey: string) => {
-    const result = await api(`/api/admin/orders/${encodeURIComponent(detailNumber)}/notifications/resend`, { method: 'POST', body: JSON.stringify({ eventKey, channels: ['email', 'whatsapp', 'in_app'] }) });
+    const result = await api(`/api/admin/orders/${encodeURIComponent(detailNumber)}/notifications/resend`, { method: 'POST', body: JSON.stringify({ eventKey, channels: ['email', 'sms', 'whatsapp', 'in_app'] }) });
     notify(result.ok ? 'Notificação reenviada.' : result.error ?? 'Falha no reenvio.', result.ok ? 'success' : 'error');
     if (detailNumber) await openDetail(detailNumber);
   };

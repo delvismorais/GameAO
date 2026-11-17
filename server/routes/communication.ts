@@ -296,7 +296,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (!deps.requireDatabase(response)) return;
     const admin = await deps.requireAdmin(request, response); if (!admin) return;
     const eventKey = text(request.body?.eventKey, 80);
-    const channel = ['email', 'whatsapp', 'in_app'].includes(String(request.body?.channel)) ? String(request.body.channel) as NotificationChannel : null;
+    const channel = ['email', 'whatsapp', 'sms', 'in_app'].includes(String(request.body?.channel)) ? String(request.body.channel) as NotificationChannel : null;
     const subject = text(request.body?.subject, 255);
     const body = text(request.body?.body, 20000);
     if (!eventKey || !channel || !body) { response.status(400).json({ error: 'invalid_template', message: 'Evento, canal e conteúdo são obrigatórios.' }); return; }
@@ -516,7 +516,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     const [[order]] = await getPool().query<any[]>(`SELECT * FROM shop_orders WHERE order_number = ? LIMIT 1`, [String(request.params.orderNumber)]);
     if (!order) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
     const eventKey = text(request.body?.eventKey, 80) || 'order.status_changed';
-    const channels = Array.isArray(request.body?.channels) ? request.body.channels.filter((channel: string) => ['email', 'whatsapp', 'in_app'].includes(channel)) : ['email', 'whatsapp', 'in_app'];
+    const channels = Array.isArray(request.body?.channels) ? request.body.channels.filter((channel: string) => ['email', 'whatsapp', 'sms', 'in_app'].includes(channel)) : ['email', 'whatsapp', 'sms', 'in_app'];
     const result = await dispatch({ eventKey, order: { id: Number(order.id), order_number: order.order_number, customer_name: order.customer_name, customer_email: order.customer_email, customer_phone: order.customer_phone, total_aoa: order.total_aoa, status: order.status, payment_method: order.payment_method, user_id: order.user_id }, channels });
     await deps.recordAudit(admin.id, 'order.notification_resend', 'shop_order', order.order_number, { eventKey, channels, result });
     response.json({ ok: true, result });
