@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CATEGORIES } from '../../data/products';
+import { useStore } from '../../context/StoreContext';
 import { Icon } from '../ui/Icon';
 
 interface SearchOverlayProps {
@@ -13,6 +14,7 @@ export function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const [category, setCategory] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { catalogCategories } = useStore();
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +51,7 @@ export function SearchOverlay({ open, onClose }: SearchOverlayProps) {
               aria-label="Categoria"
             >
               <option value="">Todas as categorias</option>
-              {CATEGORIES.map((item) => (
+              {(catalogCategories.length ? catalogCategories : CATEGORIES).map((item) => (
                 <option key={item.slug} value={item.slug}>{item.name}</option>
               ))}
             </select>

@@ -9,7 +9,7 @@ import { useToast } from '../context/ToastContext';
 import { CATEGORIES, getEffectivePriceUsd, getProductById } from '../data/products';
 
 export function Compare() {
-  const { compare, toggleCompare, addToCart, clearCompare } = useStore();
+  const { compare, toggleCompare, addToCart, clearCompare, catalogCategories } = useStore();
   const { showToast } = useToast();
   const products = compare.map((id) => getProductById(id)).filter((product) => product !== undefined);
 
@@ -81,7 +81,7 @@ export function Compare() {
                   <th>Categorias</th>
                   {products.map((product) => (
                     <td key={product.id}>
-                      {product.categories.map((slug) => CATEGORIES.find((item) => item.slug === slug)?.name).join(', ')}
+                      {product.categories.map((slug, index) => product.categoryNames?.[index] ?? catalogCategories.find((item) => item.slug === slug)?.name ?? CATEGORIES.find((item) => item.slug === slug)?.name ?? slug).join(', ')}
                     </td>
                   ))}
                 </tr>

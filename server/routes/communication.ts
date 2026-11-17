@@ -54,7 +54,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
       salesCounter: counter ?? {},
       storeStatus: status ?? {},
       faq: Array.isArray(faq) ? faq : [],
-      channels: { email: emailConfigured(), whatsapp: whatsappConfigured(), inApp: true },
+      channels: { email: emailConfigured(), whatsapp: whatsappConfigured(), sms: smsConfigured(), inApp: true },
     });
   }));
 
@@ -345,7 +345,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (!deps.requireDatabase(response)) return;
     const admin = await deps.requireAdmin(request, response); if (!admin) return;
     const eventKey = text(request.body?.eventKey, 80);
-    const channel = ['email', 'whatsapp', 'in_app'].includes(String(request.body?.channel)) ? String(request.body.channel) as NotificationChannel : 'email';
+    const channel = ['email', 'whatsapp', 'sms', 'in_app'].includes(String(request.body?.channel)) ? String(request.body.channel) as NotificationChannel : 'email';
     const to = text(request.body?.to, 255) || admin.email;
     if (!eventKey) { response.status(400).json({ error: 'invalid_event', message: 'Escolha um evento.' }); return; }
     const result = await sendTestNotification(eventKey, channel, to);
@@ -471,7 +471,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     response.json({
       email: { configured: emailConfigured(), host: process.env.SMTP_HOST ?? process.env.EMAIL_HOST ?? '', from: process.env.SMTP_FROM ?? process.env.EMAIL_FROM ?? '' },
       whatsapp: { configured: whatsappConfigured(), phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ? 'configurado' : '', version: process.env.WHATSAPP_API_VERSION ?? 'v21.0' },
-      sms: { configured: smsConfigured(), provider: process.env.TELCOSMS_API_KEY ? 'TelcoSMS' : '' },
+      sms: { configured: smsConfigured(), provider: process.env.TELCOSMS_API_KEY ? 'TelcoSMS' : '', environment: process.env.TELCOSMS_ENV ?? 'production', endpoint: process.env.TELCOSMS_API_URL ?? 'https://www.telcosms.co.ao/send_message' },
       storage: { configured: Boolean(process.env.R2_ENDPOINT && process.env.R2_BUCKET && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY), bucket: process.env.R2_BUCKET ?? '' },
       freefire: { configured: Boolean(process.env.FREEFIRE_VERIFY_URL || process.env.RAPIDAPI_KEY), provider: (process.env.FREEFIRE_VERIFY_URL || process.env.RAPIDAPI_KEY) ? 'RapidAPI Free Fire' : '' },
       openai: { configured: Boolean(process.env.OPENAI_API_KEY) },

@@ -80,7 +80,9 @@ export function whatsappConfigured(): boolean {
   return Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
 }
 
-export function smsConfigured(): boolean { return Boolean(process.env.TELCOSMS_API_KEY); }
+export function smsConfigured(): boolean {
+  return Boolean(process.env.TELCOSMS_API_KEY?.trim() && (process.env.TELCOSMS_API_URL?.trim() || 'https://www.telcosms.co.ao/send_message'));
+}
 
 export async function getSiteConfig(): Promise<SiteConfig> {
   if (cachedSiteConfig && cachedSiteConfig.expires > Date.now()) return cachedSiteConfig.value;
@@ -236,9 +238,15 @@ async function sendSms(input: { eventKey: string; to: string; body: string; user
   }
   try {
     const message = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
-    const result = await fetch('https://www.telcosms.co.ao/send_message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { api_key_app: process.env.TELCOSMS_API_KEY, phone_number: phone, message_body: message } }) });
-    if (!result.ok) throw new Error(`TelcoSMS HTTP ${result.status}`);
-    await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'sent', userId: input.userId, orderId: input.orderId });
+    const endpoint = process.env.TELCOSMS_API_URL?.trim() || 'https://www.telcosms.co.ao/send_message';
+    const result = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain' }, body: JSON.stringify({ message: { api_key_app: process.env.TELCOSMS_API_KEY, phone_number: phone, message_body: message } }), signal: AbortSignal.timeout(15000) });
+    const raw = await result.text();
+    let data: any = null;
+    try { data = raw ? JSON.parse(raw) : null; } catch { /* alguns gateways devolvem texto */ }
+    const providerError = data?.success === false || data?.status === false || data?.error || data?.errors || /^\s*(error|failed|failure)\b/i.test(raw);
+    if (!result.ok || providerError) throw new Error(String(data?.message ?? data?.error?.message ?? (raw.slice(0, 300) || `TelcoSMS HTTP ${result.status}`)));
+    const providerMessageId = String(data?.message_id ?? data?.messageId ?? data?.id ?? '').trim() || undefined;
+    await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'sent', providerMessageId, userId: input.userId, orderId: input.orderId, payload: { response: raw.slice(0, 500) } });
     return 'sent';
   } catch (error) {
     await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'failed', error: error instanceof Error ? error.message : 'Falha no envio SMS.', userId: input.userId, orderId: input.orderId });
@@ -446,7 +454,7 @@ export async function notifyLowStock(product: { id: string; name: string; stock_
 
 export async function sendTestNotification(eventKey: string, channel: NotificationChannel, to: string): Promise<{ status: DeliveryStatus; error?: string }> {
   const site = await getSiteConfig();
-  const template = await getTemplate(eventKey, channel);
+  const template = await getTemplate(eventKey, channel) ?? (channel === 'sms' ? await getTemplate(eventKey, 'whatsapp') ?? await getTemplate(eventKey, 'email') : null);
   if (!template) return { status: 'skipped', error: 'Modelo não encontrado para este evento e canal.' };
   const variables = {
     site_name: site.name, site_url: publicSiteUrl(), customer_name: 'Cliente GameAO', customer_email: to,
@@ -459,6 +467,7 @@ export async function sendTestNotification(eventKey: string, channel: Notificati
   const body = renderTemplate(template.body, variables);
   if (channel === 'email') return { status: await sendEmail({ eventKey, to, subject, body, site }) };
   if (channel === 'whatsapp') return { status: await sendWhatsApp({ eventKey, to, body }) };
+  if (channel === 'sms') return { status: await sendSms({ eventKey, to, body }) };
   await createAdminNotification({ title: `Teste de notificação: ${subject}`, message: body, level: 'info', eventKey });
   return { status: 'sent' };
 }

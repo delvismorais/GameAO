@@ -18,7 +18,7 @@ import {
 
 export function Product() {
   const { slug } = useParams();
-  const { catalogProducts, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, reviews, addReview } = useStore();
+  const { catalogProducts, catalogCategories, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, reviews, addReview } = useStore();
   const product = slug ? catalogProducts.find((item) => item.slug === slug) ?? getProductBySlug(slug) : undefined;
   const { showToast } = useToast();
   const [qty, setQty] = useState(1);
@@ -58,7 +58,7 @@ export function Product() {
 
   const effective = getEffectivePriceUsd(product);
   const productReviews = reviews.filter((review) => review.productId === product.id);
-  const categoryLabel = CATEGORIES.find((category) => category.slug === product.categories[0])?.name ?? 'Jogos';
+  const categoryLabel = product.categoryNames?.[0] ?? catalogCategories.find((category) => category.slug === product.categories[0])?.name ?? 'Jogos';
   const categoryLink = `/product-category/${product.categories[0]}`;
 
   const handleAdd = () => {
@@ -164,11 +164,11 @@ export function Product() {
             <p>
               <strong>Categorias:</strong>{' '}
               {product.categories.map((category, index) => {
-                const info = CATEGORIES.find((item) => item.slug === category);
+                const info = catalogCategories.find((item) => item.slug === category) ?? CATEGORIES.find((item) => item.slug === category);
                 return (
                   <span key={category}>
                     {index > 0 && ', '}
-                    <Link to={`/product-category/${category}`}>{info?.name}</Link>
+                    <Link to={`/product-category/${category}`}>{info?.name ?? category}</Link>
                   </span>
                 );
               })}

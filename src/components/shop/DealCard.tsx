@@ -8,11 +8,11 @@ import { Rating } from '../ui/Rating';
 import { Icon } from '../ui/Icon';
 
 export function DealCard({ product }: { product: Product }) {
-  const { addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared } = useStore();
+  const { addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, catalogCategories } = useStore();
   const { showToast } = useToast();
   const effective = getEffectivePriceUsd(product);
   const discount = discountPercent(product.basePriceUsd, product.salePriceUsd);
-  const category = CATEGORIES.find((item) => item.slug === product.categories[0])?.name ?? 'Jogos';
+  const category = product.categoryNames?.[0] ?? catalogCategories.find((item) => item.slug === product.categories[0])?.name ?? CATEGORIES.find((item) => item.slug === product.categories[0])?.name ?? 'Jogos';
 
   return (
     <article className="deal-card">

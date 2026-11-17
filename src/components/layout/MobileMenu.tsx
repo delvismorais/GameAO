@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { CATEGORIES } from '../../data/products';
 import { CONTACT_INFO } from '../../data/site';
+import { useStore } from '../../context/StoreContext';
 
 interface MobileMenuProps {
   open: boolean;
@@ -10,6 +11,7 @@ interface MobileMenuProps {
 }
 
 export function MobileMenu({ open, onClose }: MobileMenuProps) {
+  const { catalogCategories } = useStore();
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -39,7 +41,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
           <Link to="/category/news" onClick={onClose}>Notícias</Link>
           <Link to="/product-category/featured" onClick={onClose}>Destaques</Link>
           <p className="mobile-menu__label">Categorias</p>
-          {CATEGORIES.map((category) => (
+          {(catalogCategories.length ? catalogCategories : CATEGORIES).map((category) => (
             <Link key={category.slug} to={`/product-category/${category.slug}`} onClick={onClose}>
               {category.name}
             </Link>

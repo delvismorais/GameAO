@@ -15,6 +15,7 @@ const client = endpoint && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET
   : null;
 
 export function isStorageConfigured(): boolean { return Boolean(client && privateBucket); }
+export function isPublicStorageConfigured(): boolean { return Boolean(client && publicBucket); }
 
 function bucketFor(isPrivate: boolean): string {
   const bucket = isPrivate ? privateBucket : publicBucket;

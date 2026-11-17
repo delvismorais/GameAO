@@ -13,6 +13,7 @@ import { usdToAoa } from '../lib/pricing';
 import {
   getEffectivePriceUsd,
   getProductById,
+  CATEGORIES,
   SHOP_PRODUCTS,
   type Product,
 } from '../data/products';
@@ -36,6 +37,15 @@ export interface Customer {
   phone: string;
   email: string;
   notes: string;
+}
+
+export interface CatalogCategory {
+  id?: number;
+  slug: string;
+  name: string;
+  description: string;
+  image?: string | null;
+  productCount?: number;
 }
 
 export interface OrderItem {
@@ -79,6 +89,7 @@ export interface BlogComment {
 
 interface StoreContextValue {
   catalogProducts: Product[];
+  catalogCategories: CatalogCategory[];
   cart: CartLine[];
   cartCount: number;
   cartLines: { product: Product; qty: number }[];
@@ -138,6 +149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [user, setUser] = useState<User | null>(null);
   const [serverProducts, setServerProducts] = useState<Product[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(CATEGORIES);
   const [orders, setOrders] = useState<Order[]>(() =>
     readStorage<Order[]>(STORAGE_KEYS.orders, []),
   );
@@ -174,6 +186,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     fetch('/api/catalog/products')
       .then((response) => response.ok ? response.json() : { products: [] })
       .then((data: { products?: Product[] }) => { if (active && Array.isArray(data.products)) setServerProducts(data.products); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/catalog/categories')
+      .then((response) => response.ok ? response.json() : { categories: [] })
+      .then((data: { categories?: CatalogCategory[] }) => {
+        if (active && Array.isArray(data.categories) && data.categories.length) setCatalogCategories(data.categories);
+      })
       .catch(() => undefined);
     return () => { active = false; };
   }, []);
@@ -402,6 +425,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<StoreContextValue>(
     () => ({
       catalogProducts,
+      catalogCategories,
       cart,
       cartCount,
       cartLines,
@@ -432,6 +456,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       catalogProducts,
+      catalogCategories,
       cart,
       cartCount,
       cartLines,

@@ -7,9 +7,11 @@ import { formatDatePt } from '../../lib/pricing';
 import { STORE_INFO } from '../../config/store';
 import { Icon } from '../ui/Icon';
 import { useToast } from '../../context/ToastContext';
+import { useStore } from '../../context/StoreContext';
 
 export function Footer() {
   const { showToast } = useToast();
+  const { catalogCategories } = useStore();
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const blogPosts = POSTS.slice(0, 2);
   useEffect(() => {
@@ -79,7 +81,7 @@ export function Footer() {
         <div className="footer-col">
           <h3 className="footer-title">Categorias</h3>
           <ul className="footer-links">
-            {CATEGORIES.map((category) => (
+            {(catalogCategories.length ? catalogCategories : CATEGORIES).map((category) => (
               <li key={category.slug}>
                 <Link to={`/product-category/${category.slug}`}>{category.name}</Link>
               </li>

@@ -37,11 +37,12 @@ const PER_PAGE_OPTIONS = [12, 16, 20, 24];
 export function ShopView({ category }: ShopViewProps) {
   const [params, setParams] = useSearchParams();
   const { rate } = useSettings();
-  const { catalogProducts } = useStore();
+  const { catalogProducts, catalogCategories } = useStore();
   const { showToast } = useToast();
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const categoryInfo = category ? getCategoryBySlug(category) : undefined;
+  const availableCategories = catalogCategories.length ? catalogCategories : CATEGORIES;
+  const categoryInfo = category ? availableCategories.find((item) => item.slug === category) ?? getCategoryBySlug(category) : undefined;
   const pageTitle = categoryInfo?.name ?? 'Loja';
 
   const q = params.get('q') ?? '';
@@ -85,7 +86,7 @@ export function ShopView({ category }: ShopViewProps) {
       const needle = normalizeText(q);
       list = list.filter((product) => {
         const categoryNames = product.categories
-          .map((slug) => CATEGORIES.find((item) => item.slug === slug)?.name ?? '')
+          .map((slug, index) => product.categoryNames?.[index] ?? availableCategories.find((item) => item.slug === slug)?.name ?? '')
           .join(' ');
         const haystack = normalizeText(
           `${product.name} ${product.tags.join(' ')} ${categoryNames} ${product.shortDescription}`,
@@ -125,7 +126,7 @@ export function ShopView({ category }: ShopViewProps) {
     }
 
     return list;
-  }, [category, catParam, q, tag, rating, min, max, sort, rate, catalogProducts]);
+  }, [category, catParam, q, tag, rating, min, max, sort, rate, catalogProducts, availableCategories]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const currentPage = Math.min(page, totalPages);
@@ -169,13 +170,13 @@ export function ShopView({ category }: ShopViewProps) {
           <li className={!category && !catParam ? 'is-active' : ''}>
             <Link to="/shop">Todos os produtos <span>{catalogProducts.length}</span></Link>
           </li>
-          {CATEGORIES.map((item) => (
+          {availableCategories.map((item) => (
             <li
               key={item.slug}
               className={category === item.slug || catParam === item.slug ? 'is-active' : ''}
             >
                 <Link to={`/product-category/${item.slug}`}>
-                {item.name} <span>{catalogProducts.filter((product) => product.categories.includes(item.slug)).length}</span>
+                {item.name} <span>{'productCount' in item && item.productCount != null ? Number(item.productCount) : catalogProducts.filter((product) => product.categories.includes(item.slug)).length}</span>
               </Link>
             </li>
           ))}
@@ -348,7 +349,7 @@ export function ShopView({ category }: ShopViewProps) {
                 <div className="shop-active-filters">
                   <span>Filtros ativos:</span>
                   {q && <button type="button" onClick={() => updateParams({ q: null })}>“{q}” <Icon name="close" /></button>}
-                  {catParam && <button type="button" onClick={() => updateParams({ cat: null })}>{CATEGORIES.find((item) => item.slug === catParam)?.name} <Icon name="close" /></button>}
+                  {catParam && <button type="button" onClick={() => updateParams({ cat: null })}>{availableCategories.find((item) => item.slug === catParam)?.name ?? catParam} <Icon name="close" /></button>}
                   {tag && <button type="button" onClick={() => updateParams({ tag: null })}>{tag} <Icon name="close" /></button>}
                   {rating > 0 && <button type="button" onClick={() => updateParams({ rating: null })}>{rating}★ e acima <Icon name="close" /></button>}
                   {min > 0 && <button type="button" onClick={() => updateParams({ min: null })}>Mín. {formatUsdAsAoa(min / rate, rate)} <Icon name="close" /></button>}

@@ -1,4 +1,4 @@
-export type CategorySlug = 'game' | 'xbox' | 'playstation' | 'pc' | 'featured' | 'free-fire' | 'roblox' | 'premium' | 'accessories';
+export type CategorySlug = string;
 
 export interface Category {
   slug: CategorySlug;
@@ -29,6 +29,7 @@ export interface Product {
   rating: number;
   reviewCount: number;
   categories: CategorySlug[];
+  categoryNames?: string[];
   tags: string[];
   image: string;
   imageCard: string;

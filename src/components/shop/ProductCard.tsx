@@ -14,7 +14,7 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, showCategory = false, variant = 'light' }: ProductCardProps) {
-  const { addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared } = useStore();
+  const { addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, catalogCategories } = useStore();
   const { showToast } = useToast();
   const effective = getEffectivePriceUsd(product);
   const discount = discountPercent(product.basePriceUsd, product.salePriceUsd);
@@ -22,7 +22,7 @@ export function ProductCard({ product, showCategory = false, variant = 'light' }
   const compared = isCompared(product.id);
   const category = product.categories.includes('featured')
     ? 'Destaques'
-    : CATEGORIES.find((item) => item.slug === product.categories[0])?.name ?? 'Jogos';
+    : product.categoryNames?.[0] ?? catalogCategories.find((item) => item.slug === product.categories[0])?.name ?? CATEGORIES.find((item) => item.slug === product.categories[0])?.name ?? 'Jogos';
 
   const handleAdd = () => {
     addToCart(product.id);

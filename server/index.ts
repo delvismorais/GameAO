@@ -17,9 +17,10 @@ import {
   notifyPaymentProofSubmitted,
   notifyPaymentReview,
   notifyUserWelcome,
+  emailConfigured,
   type OrderStatus,
 } from './notifications';
-import { getPrivateObjectUrl, isStorageConfigured, publicObjectUrl, putObject, putPrivateObject } from './storage';
+import { getPrivateObjectUrl, isPublicStorageConfigured, isStorageConfigured, publicObjectUrl, putObject, putPrivateObject, signedDownloadUrl } from './storage';
 import { registerCommunicationRoutes } from './routes/communication';
 import { registerAdminModuleRoutes } from './routes/admin-modules';
 import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } from './affiliates';
@@ -37,6 +38,7 @@ const mediaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize
 
 const PROOF_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 const PROOF_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+const MEDIA_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function safeFileExtension(name: string): string {
   const match = name.toLowerCase().match(/\.[a-z0-9]+$/);
@@ -57,6 +59,10 @@ function hasValidImageSignature(file: Express.Multer.File): boolean {
   return (file.mimetype === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
     || (file.mimetype === 'image/png' && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
     || (file.mimetype === 'image/webp' && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP');
+}
+function hasValidMediaSignature(file: Express.Multer.File): boolean {
+  if (file.mimetype === 'image/gif') return file.buffer.subarray(0, 6).toString('ascii') === 'GIF87a' || file.buffer.subarray(0, 6).toString('ascii') === 'GIF89a';
+  return hasValidImageSignature(file);
 }
 
 function asyncRoute(handler: (request: Request, response: Response, next: NextFunction) => Promise<void>) {
@@ -109,7 +115,7 @@ function parseArrayValue(value: unknown): string[] {
 
 async function readCatalogProducts(includeInactive = false) {
   const [rows] = await getPool().query<any[]>(
-    `SELECT p.*, STRING_AGG(c.slug, ',' ORDER BY c.slug) AS category_slugs
+    `SELECT p.*, STRING_AGG(c.slug, ',' ORDER BY c.slug) AS category_slugs, STRING_AGG(c.name, ',' ORDER BY c.sort_order, c.name) AS category_names
        FROM catalog_products p
        LEFT JOIN catalog_product_categories pc ON pc.product_id = p.id
        LEFT JOIN catalog_categories c ON c.id = pc.category_id
@@ -133,6 +139,7 @@ async function readCatalogProducts(includeInactive = false) {
     rating: Number(row.rating),
     reviewCount: Number(row.review_count),
     categories: row.category_slugs ? String(row.category_slugs).split(',') : [],
+    categoryNames: row.category_names ? String(row.category_names).split(',') : [],
     tags: parseArrayValue(row.tags_json),
     image: row.image_url,
     imageCard: row.image_card_url,
@@ -283,6 +290,12 @@ app.get('/api/catalog/products', asyncRoute(async (_request, response) => {
   response.json({ products: await readCatalogProducts(), source: 'database' });
 }));
 
+app.get('/api/catalog/categories', asyncRoute(async (_request, response) => {
+  if (!requireDatabase(response)) return;
+  const [categories] = await getPool().query<any[]>(`SELECT c.id, c.slug, c.name, c.description, c.image_url, c.sort_order, COUNT(p.id) FILTER (WHERE p.is_active = 1) AS product_count FROM catalog_categories c LEFT JOIN catalog_product_categories pc ON pc.category_id = c.id LEFT JOIN catalog_products p ON p.id = pc.product_id WHERE c.is_active = 1 GROUP BY c.id ORDER BY c.sort_order ASC, c.name ASC LIMIT 200`);
+  response.json({ categories: categories.map((category) => ({ id: Number(category.id), slug: category.slug, name: category.name, description: category.description ?? '', image: category.image_url ?? null, productCount: Number(category.product_count ?? 0) })), source: 'database' });
+}));
+
 function jsonValue(value: unknown, fallback: unknown = {}) {
   if (typeof value !== 'string') return value ?? fallback;
   try { return JSON.parse(value); } catch { return fallback; }
@@ -318,7 +331,7 @@ app.post('/api/marketing/subscribe', asyncRoute(async (request, response) => {
 async function findOrder(orderNumber: string) {
   const [[order]] = await getPool().query<any[]>(`SELECT * FROM shop_orders WHERE order_number = ? LIMIT 1`, [orderNumber]);
   if (!order) return null;
-  const [items] = await getPool().query<any[]>(`SELECT i.*, p.image_card_url FROM shop_order_items i LEFT JOIN catalog_products p ON p.id = i.product_id WHERE i.order_id = ? ORDER BY i.id ASC`, [order.id]);
+  const [items] = await getPool().query<any[]>(`SELECT i.*, COALESCE(i.image_url, p.image_card_url) AS image_card_url FROM shop_order_items i LEFT JOIN catalog_products p ON p.id = i.product_id WHERE i.order_id = ? ORDER BY i.id ASC`, [order.id]);
   const [[paymentMethod]] = await getPool().query<any[]>(`SELECT id, code, name, description, instructions, receiving_data_json, requires_proof, payment_deadline_hours, customer_message FROM payment_methods WHERE id = ? LIMIT 1`, [order.payment_method_id]);
   const [proofs] = await getPool().query<any[]>(`SELECT id, original_name, mime_type, size_bytes, status, admin_note, submitted_at, reviewed_at FROM payment_proofs WHERE order_id = ? ORDER BY submitted_at DESC`, [order.id]);
   const [history] = await getPool().query<any[]>(`SELECT from_status, to_status, note, created_at FROM shop_order_status_history WHERE order_id = ? ORDER BY created_at ASC LIMIT 100`, [order.id]);
@@ -500,7 +513,8 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     if (hasPhysical && (!String(body.deliveryAddress ?? customer.address).trim() || !String(customer.city ?? '').trim() || !String(customer.province ?? '').trim())) { await connection.rollback(); response.status(400).json({ error: 'delivery_address_required', message: 'Produtos físicos exigem um endereço de entrega completo.' }); return; }
     const deliveryDate = body.deliveryDate ? String(body.deliveryDate).slice(0, 10) : null;
     const trackingToken = randomBytes(24).toString('hex');
-    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, trackingToken, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, String(body.deliveryAddress ?? customer.address).trim(), deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
+    const deliveryAddress = [String(body.deliveryAddress ?? customer.address).trim(), String(customer.apartment ?? '').trim()].filter(Boolean).join(', ');
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, billing_country, billing_postal_code, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, trackingToken, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, customer.country, customer.postalCode || null, deliveryAddress, deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
     const orderId = Number(Array.isArray(insert) ? insert[0]?.id : insert?.insertId);
     if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('A base de dados não devolveu o identificador da encomenda.');
     const orderNumber = `GA${orderId}`;
@@ -547,9 +561,12 @@ app.get('/api/orders/:orderNumber', asyncRoute(async (request, response) => {
     response.status(403).json({ error: 'email_verification_required', message: 'Indique o email usado na encomenda ou abra o link seguro enviado por email.' });
     return;
   }
+  const hasPhysical = found.items.some((item: any) => item.category_type === 'physical');
+  const hasDigital = found.items.some((item: any) => item.category_type !== 'physical');
+  const deliveryType = hasPhysical && hasDigital ? 'mixed' : hasPhysical ? 'physical' : 'digital';
   response.json({
-    order: { order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, total_aoa: found.order.total_aoa, subtotal_aoa: found.order.subtotal_aoa, exchange_rate_usd_aoa: found.order.exchange_rate_usd_aoa, shipping_aoa: found.order.shipping_aoa, discount_aoa: found.order.discount_aoa, coupon_code: found.order.coupon_code, status: found.order.status, payment_status: found.order.payment_status, payment_method: found.order.payment_method, payment_reference: found.order.payment_reference, created_at: found.order.created_at, updated_at: found.order.updated_at, delivery_city: found.order.billing_city, delivery_province: found.order.billing_province },
-    items: found.items.map((item: any) => ({ product_name: item.product_name, variant_name: item.variant_name, quantity: item.quantity, unit_price_aoa: item.unit_price_aoa, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url, player_id: item.player_id, player_nickname: item.player_nickname })),
+    order: { order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone, total_aoa: found.order.total_aoa, subtotal_aoa: found.order.subtotal_aoa, exchange_rate_usd_aoa: found.order.exchange_rate_usd_aoa, shipping_aoa: found.order.shipping_aoa, discount_aoa: found.order.discount_aoa, coupon_code: found.order.coupon_code, status: found.order.status, payment_status: found.order.payment_status, payment_method: found.order.payment_method, payment_reference: found.order.payment_reference, created_at: found.order.created_at, updated_at: found.order.updated_at, billing_address: found.order.billing_address, delivery_address: found.order.delivery_address ?? found.order.billing_address, delivery_city: found.order.billing_city, delivery_province: found.order.billing_province, delivery_date: found.order.delivery_date, delivery_type: deliveryType },
+    items: found.items.map((item: any) => ({ product_id: item.product_id, product_name: item.product_name, variant_name: item.variant_name, quantity: item.quantity, unit_price_aoa: item.unit_price_aoa, subtotal_aoa: item.subtotal_aoa, image_card_url: item.image_card_url, player_id: item.player_id, player_nickname: item.player_nickname, category_type: item.category_type, product_subtype: item.product_subtype })),
     paymentMethod: found.paymentMethod,
     proofs: found.proofs,
     history: found.history,
@@ -567,7 +584,7 @@ async function deliverInvoice(request: Request, response: Response, adminOnly: b
     return;
   }
   const template = chooseInvoiceTemplate(request.query.template);
-  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
+  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, deliveryAddress: found.order.delivery_address, deliveryDate: found.order.delivery_date, shippingAoa: Number(found.order.shipping_aoa ?? 0), paymentMethod: found.order.payment_method, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
   await getPool().execute(`INSERT INTO invoice_downloads (order_id, template, downloaded_by_user_id) VALUES (?, ?, ?)`, [found.order.id, template, admin?.id ?? null]);
   response.setHeader('Content-Type', 'application/pdf');
   response.setHeader('Content-Disposition', `attachment; filename="fatura-${found.order.order_number}-${template}.pdf"`);
@@ -659,16 +676,16 @@ app.post('/api/admin/media', mediaUpload.single('file'), asyncRoute(async (reque
   if (!requireDatabase(response)) return;
   const admin = await requireAdmin(request, response);
   if (!admin) return;
-  if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento R2 não está configurado.' }); return; }
+  if (!isPublicStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento público R2 não está configurado.' }); return; }
   const file = request.file;
   const kind = String(request.body?.kind ?? 'product').replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'product';
-  if (!file || !PROOF_MIME_TYPES.has(file.mimetype) || !hasValidFileSignature(file)) { response.status(400).json({ error: 'invalid_file', message: 'Envie um JPG, PNG, WEBP ou PDF válido.' }); return; }
-  const extension = safeFileExtension(file.originalname) || (file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : file.mimetype === 'image/webp' ? '.webp' : '.pdf');
+  if (!file || !MEDIA_MIME_TYPES.has(file.mimetype) || !hasValidMediaSignature(file)) { response.status(400).json({ error: 'invalid_file', message: 'Envie uma imagem JPG, PNG, WEBP ou GIF válida.' }); return; }
+  const extension = safeFileExtension(file.originalname) || (file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : file.mimetype === 'image/webp' ? '.webp' : '.gif');
   const key = `media/${kind}/${randomUUID()}${extension}`;
   // Media pública é enviada pelo servidor para evitar falhas de CORS ou
   // incompatibilidades de assinatura em browsers com URLs presignadas.
   await putObject(key, file.buffer, file.mimetype, false);
-  const url = publicObjectUrl(key) ?? await getPrivateObjectUrl(key, 3600);
+  const url = publicObjectUrl(key) ?? await signedDownloadUrl(key, 3600, false);
   await getPool().execute(`INSERT INTO media_library (original_name, stored_name, bucket, object_key, public_url, mime_type, size_bytes, category, purpose, visibility, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', ?) ON CONFLICT (object_key) DO NOTHING`, [file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), key.split('/').pop(), process.env.R2_PUBLIC_BUCKET ?? process.env.R2_BUCKET ?? 'gameao-media', key, publicObjectUrl(key), file.mimetype, file.size, file.mimetype.startsWith('image/') ? 'image' : 'document', kind, admin.id]);
   await recordAudit(admin.id, 'media.upload', 'media', key, { kind, mimeType: file.mimetype, size: file.size });
   response.status(201).json({ key, url, public: Boolean(publicObjectUrl(key)) });
@@ -922,10 +939,10 @@ app.get('/api/admin/email/templates', asyncRoute(async (request, response) => { 
 app.put('/api/admin/email/templates/:id', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; await getPool().execute(`UPDATE email_templates SET name = ?, subject = ?, body_html = ?, body_text = ?, is_active = ?, updated_at = NOW() WHERE id = ?`, [String(body.name ?? ''), String(body.subject ?? ''), String(body.bodyHtml ?? ''), String(body.bodyText ?? ''), body.isActive === false ? 0 : 1, Number(request.params.id)]); await recordAudit(admin.id, 'email.template.update', 'email_template', String(request.params.id)); response.json({ ok: true }); }));
 app.get('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [campaigns] = await getPool().query<any[]>(`SELECT * FROM email_campaigns ORDER BY created_at DESC LIMIT 100`); response.json({ campaigns }); }));
 app.post('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; const name = String(body.name ?? '').trim(); const subject = String(body.subject ?? '').trim(); if (!name || !subject || !String(body.bodyHtml ?? '').trim()) { response.status(400).json({ error: 'invalid_campaign', message: 'Nome, assunto e conteúdo HTML são obrigatórios.' }); return; } const [result] = await getPool().execute<any>(`INSERT INTO email_campaigns (name, subject, body_html, body_text, audience_status, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)`, [name, subject, body.bodyHtml, body.bodyText ?? '', body.audienceStatus ?? 'subscribed', admin.id]); await recordAudit(admin.id, 'email.campaign.create', 'email_campaign', String(result.insertId)); response.status(201).json({ ok: true, id: result.insertId }); }));
-app.get('/api/admin/email/status', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; response.json({ configured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_FROM), from: process.env.SMTP_FROM ? 'configurado' : 'não configurado' }); }));
+app.get('/api/admin/email/status', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; response.json({ configured: emailConfigured(), from: process.env.SMTP_FROM || process.env.EMAIL_FROM ? 'configurado' : 'não configurado' }); }));
 app.post('/api/admin/email/campaigns/:id/send', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return;
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_FROM) { response.status(503).json({ error: 'email_not_configured', message: 'Configure SMTP_HOST, SMTP_USER e SMTP_FROM no Render antes de enviar.' }); return; }
+  if (!emailConfigured()) { response.status(503).json({ error: 'email_not_configured', message: 'Configure servidor, utilizador, palavra-passe e remetente SMTP no Render antes de enviar.' }); return; }
   const [[campaign]] = await getPool().query<any[]>(`SELECT * FROM email_campaigns WHERE id = ? LIMIT 1`, [Number(request.params.id)]); if (!campaign) { response.status(404).json({ error: 'campaign_not_found', message: 'Campanha não encontrada.' }); return; }
   const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = ? LIMIT 5000`, [campaign.audience_status]);
   const transporter = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT ?? 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } });
@@ -959,6 +976,7 @@ async function serveApp(): Promise<void> {
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     console.error('[server]', error instanceof Error ? error.message : 'Erro interno');
+    if (response.headersSent) return;
     response.status(500).json({ error: 'internal_error', message: 'Ocorreu um erro interno.' });
   });
 
