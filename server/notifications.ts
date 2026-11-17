@@ -238,7 +238,7 @@ async function sendSms(input: { eventKey: string; to: string; body: string; user
   }
   try {
     const message = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
-    const endpoint = process.env.TELCOSMS_API_URL?.trim() || 'https://www.telcosms.co.ao/send_message';
+    const endpoint = process.env.TELCOSMS_API_URL?.trim() || 'https://telcosms.co.ao/send_message';
     const result = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain' }, body: JSON.stringify({ message: { api_key_app: process.env.TELCOSMS_API_KEY, phone_number: phone, message_body: message } }), signal: AbortSignal.timeout(15000) });
     const raw = await result.text();
     let data: any = null;
@@ -405,7 +405,7 @@ export async function notifyOrderCreated(order: NotificationOrder & { items?: Ar
 }
 
 export async function notifyPaymentProofSubmitted(order: NotificationOrder): Promise<DispatchResult> {
-  const result = await dispatch({ eventKey: 'order.payment_proof_submitted', order: { ...order, status: 'payment_verification' }, channels: ['email', 'in_app'] });
+  const result = await dispatch({ eventKey: 'order.payment_proof_submitted', order: { ...order, status: 'payment_verification' }, channels: ['email', 'sms', 'in_app'] });
   await dispatch({ eventKey: 'admin.payment_proof', order, channels: ['in_app', 'email'], entityType: 'shop_order', entityId: order.order_number });
   return result;
 }
