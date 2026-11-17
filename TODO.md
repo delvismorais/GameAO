@@ -135,3 +135,13 @@
 - [ ] Testar acompanhamento válido/inexistente, verificação incorreta, privacidade, alteração no painel e atualização pública.
 - [ ] Testar sitemap, robots, canónicas, metadados, dados estruturados, indexação pública, desktop/tablet/mobile e regressão visual contra o checkpoint `1ac1bd5`.
 - [ ] Antes de cada deploy, criar ponto de recuperação, verificar variáveis, migrações, autenticação, checkout, integrações, media, permissões e testes; não publicar como concluído enquanto existirem erros críticos.
+
+## 18. Centro de comunicação e painel responsivo — fase atual
+
+- [ ] O painel administrativo deve manter a vibe GameAO e usar a referência DashboardPack apenas para organização: sidebar persistente, topbar, cartões de resumo, tabelas filtráveis, estados claros e layout responsivo sem alterar o website público.
+- [ ] O centro de notificações deve permitir pesquisar uma encomenda pelo número, apresentar cliente, email, telefone, total, estado e itens, e carregar essa ficha automaticamente para o envio manual.
+- [ ] O envio manual deve permitir escolher email, SMS, WhatsApp ou notificação interna, aceitar destinatário/assunto/corpo personalizados, inserir variáveis do pedido, usar modelos por evento e registar a tentativa com estado enviado, falhou, não configurado ou ignorado.
+- [ ] Os modelos devem poder ser criados, editados, ativados/desativados e eliminados, com pré-visualização e indicação das variáveis suportadas; nenhuma credencial de provedor pode chegar ao frontend.
+- [ ] As entregas devem poder ser filtradas por canal, estado e número da encomenda e mostrar o erro devolvido pelo provedor quando existir.
+- [ ] As campanhas devem permitir guardar rascunhos, personalizar assunto/HTML/texto, escolher audiência de leads subscritos, pré-visualizar e pedir confirmação antes de enviar em massa; cada destinatário deve usar o seu nome e ficar registado no histórico.
+- [ ] A interface mobile deve manter todas as funções num drawer/tabs roláveis, converter filtros e formulários para uma coluna, manter tabelas em scroll contido e evitar overflow horizontal do viewport em 375px, 390px, 768px e desktop.

@@ -21,6 +21,16 @@ A análise da referência foi feita página a página (Homepage 1 e 2, Loja, cat
 - **Wordmark & Logo**: logótipo original GAMESHOP (GAME laranja + SHOP branco), preservado como imagem.
 - **Signature Brand Color**: `#cd3d0f`.
 
+### 3.1. Fase do painel administrativo e comunicação
+
+Esta fase mantém o shell administrativo próprio do GameAO e usa a demonstração DashboardPack fornecida pelo utilizador apenas como referência de organização: sidebar persistente, topbar compacta, cartões de resumo, tabelas filtráveis e adaptação mobile. Não são copiados ativos, HTML ou identidade da referência.
+
+- **Pesquisa de encomenda para comunicação**: a rota protegida `/api/admin/notification-orders/lookup` procura pelo número da encomenda e devolve apenas a ficha necessária ao operador, itens e histórico recente de entregas.
+- **Envio manual associado à encomenda**: `/api/admin/notifications/manual` recebe canal, destinatário, assunto e corpo editáveis, renderiza variáveis no servidor e chama o adaptador real de email, SMS, WhatsApp ou in-app. Cada tentativa fica ligada a `shop_orders` e `notification_deliveries`.
+- **Modelos**: o centro de notificações passa a criar, editar, ativar/desativar e eliminar modelos por evento/canal, com variáveis documentadas e pré-visualização.
+- **Campanhas em massa**: o fluxo de campanhas de email continua baseado em leads subscritos, ganha variáveis por destinatário, confirmação explícita antes do envio e o mesmo registo de entrega usado pelas mensagens transacionais.
+- **Segurança operacional**: todas as rotas exigem administrador, usam queries parametrizadas, limitam o tamanho dos payloads e não expõem credenciais. Falhas de provedor não interrompem a encomenda nem são apresentadas como sucesso.
+
 ## 3. Stack e arquitetura
 
 - **React 19 + TypeScript + Vite 7 + React Router 7**, mantendo os componentes e CSS existentes. O backend será servido pelo mesmo projeto através do servidor Webdev; a base de dados MySQL gerida será a fonte de verdade para utilizadores, produtos, conteúdos, carrinho, encomendas, pagamentos, notificações e auditoria. O `localStorage` fica apenas como apoio transitório/offline e não substitui os dados comerciais persistentes.

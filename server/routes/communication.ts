@@ -14,6 +14,8 @@ import {
   notifyContactMessage,
   notifyPasswordReset,
   publicSiteUrl,
+  normalizePhone,
+  sendManualNotification,
   sendTestNotification,
   smsConfigured,
   whatsappConfigured,
@@ -326,17 +328,52 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     response.status(204).end();
   }));
 
+  app.get('/api/admin/notification-orders/lookup', wrap(async (request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    if (!await deps.requireAdmin(request, response)) return;
+    const orderNumber = text(request.query.orderNumber, 80);
+    if (orderNumber.length < 2) { response.status(400).json({ error: 'invalid_order_number', message: 'Indique pelo menos dois caracteres do número da encomenda.' }); return; }
+    const [matches] = await getPool().query<any[]>(`SELECT id, order_number, user_id, customer_name, customer_email, customer_phone, total_aoa, status, payment_status, payment_method, created_at FROM shop_orders WHERE order_number ILIKE ? ORDER BY CASE WHEN LOWER(order_number) = LOWER(?) THEN 0 ELSE 1 END, created_at DESC LIMIT 2`, [`%${orderNumber}%`, orderNumber]);
+    if (!matches.length) { response.status(404).json({ error: 'order_not_found', message: 'Nenhuma encomenda encontrada com esse número.' }); return; }
+    if (matches.length > 1 && String(matches[0].order_number).toLowerCase() !== orderNumber.toLowerCase()) { response.status(409).json({ error: 'ambiguous_order_number', message: 'Existem várias encomendas com essa pesquisa. Indique o número completo.', matches: matches.map((item) => item.order_number) }); return; }
+    const order = matches[0];
+    const [items] = await getPool().query<any[]>(`SELECT product_name, quantity, subtotal_aoa, player_id, player_nickname FROM shop_order_items WHERE order_id = ? ORDER BY id ASC LIMIT 100`, [order.id]);
+    const [notifications] = await getPool().query<any[]>(`SELECT id, event_key, channel, recipient, status, subject, error_message, created_at FROM notification_deliveries WHERE order_id = ? ORDER BY created_at DESC LIMIT 8`, [order.id]);
+    response.json({ order, items, notifications });
+  }));
+
+  app.post('/api/admin/notifications/manual', wrap(async (request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    const admin = await deps.requireAdmin(request, response); if (!admin) return;
+    const orderNumber = text(request.body?.orderNumber, 80);
+    const channel = ['email', 'whatsapp', 'sms', 'in_app'].includes(String(request.body?.channel)) ? String(request.body.channel) as NotificationChannel : null;
+    const subject = text(request.body?.subject, 255);
+    const body = text(request.body?.body, 20000);
+    if (!orderNumber || !channel || !body) { response.status(400).json({ error: 'invalid_manual_notification', message: 'Encomenda, canal e conteúdo são obrigatórios.' }); return; }
+    const [[order]] = await getPool().query<any[]>(`SELECT id, order_number, user_id, customer_name, customer_email, customer_phone, total_aoa, status, payment_method FROM shop_orders WHERE order_number = ? LIMIT 1`, [orderNumber]);
+    if (!order) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
+    const recipient = text(request.body?.recipient, 255) || (channel === 'email' ? String(order.customer_email ?? '') : String(order.customer_phone ?? ''));
+    if (channel === 'email' && !validEmail(recipient)) { response.status(400).json({ error: 'invalid_recipient', message: 'Indique um email válido para esta notificação.' }); return; }
+    if ((channel === 'sms' || channel === 'whatsapp') && !/^2449\d{8}$/.test(normalizePhone(recipient))) { response.status(400).json({ error: 'invalid_recipient', message: 'Indique um número angolano válido com 9 dígitos.' }); return; }
+    const [items] = await getPool().query<any[]>(`SELECT product_name, quantity, subtotal_aoa, player_id, player_nickname FROM shop_order_items WHERE order_id = ? ORDER BY id ASC LIMIT 100`, [order.id]);
+    const result = await sendManualNotification({ eventKey: text(request.body?.eventKey, 80) || 'admin.manual_order', channel, order: { ...order, items }, recipient: recipient || null, subject, body });
+    await deps.recordAudit(admin.id, 'notification.manual_send', 'shop_order', String(order.id), { orderNumber, channel, status: result.status });
+    response.status(result.status === 'sent' ? 200 : 422).json({ ok: result.status === 'sent', ...result });
+  }));
+
   app.get('/api/admin/notification-deliveries', wrap(async (request, response) => {
     if (!deps.requireDatabase(response)) return;
     if (!await deps.requireAdmin(request, response)) return;
     const filters: string[] = [];
     const params: unknown[] = [];
-    for (const [query, column] of [['channel', 'channel'], ['status', 'status'], ['event', 'event_key']] as const) {
+    for (const [query, column] of [['channel', 'd.channel'], ['status', 'd.status'], ['event', 'd.event_key']] as const) {
       const value = text(request.query[query], 80);
       if (value && value !== 'all') { filters.push(`${column} = ?`); params.push(value); }
     }
+    const orderNumber = text(request.query.orderNumber, 80);
+    if (orderNumber) { filters.push(`d.order_id = (SELECT id FROM shop_orders WHERE order_number = ? LIMIT 1)`); params.push(orderNumber); }
     const limit = Math.min(300, Math.max(1, Number(request.query.limit ?? 100)));
-    const [rows] = await getPool().query<any[]>(`SELECT * FROM notification_deliveries ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''} ORDER BY created_at DESC LIMIT ${limit}`, params);
+    const [rows] = await getPool().query<any[]>(`SELECT d.id, d.event_key, d.channel, d.recipient, d.status, d.subject, d.error_message, d.sent_at, d.created_at, o.order_number FROM notification_deliveries d LEFT JOIN shop_orders o ON o.id = d.order_id ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''} ORDER BY d.created_at DESC LIMIT ${limit}`, params);
     const [summary] = await getPool().query<any[]>(`SELECT channel, status, COUNT(*) AS total FROM notification_deliveries WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY channel, status`);
     response.json({ deliveries: rows, summary });
   }));

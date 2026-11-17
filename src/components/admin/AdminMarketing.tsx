@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AdminOperationsManager } from './AdminOperationsManager';
+import { AdminNotifications } from './AdminNotifications';
 import { AdminSection, Badge, Empty, Field, Modal, Notice, api, formatDate, formatKz, useJson } from './ui';
 import type { AdminSectionId } from './adminNav';
 
@@ -9,7 +10,7 @@ type Payout = { id: number; user_name: string; code: string; amount_aoa: number;
 type Social = { label: string; href: string; icon: string };
 
 export function AdminMarketing({ section }: { section: AdminSectionId }) {
-  if (section === 'campaigns') return <AdminOperationsManager key="campaigns" initialModule="marketing" />;
+  if (section === 'campaigns') return <AdminNotifications key="campaigns" initialTab="campaigns" />;
   if (section === 'emails') return <AdminOperationsManager key="emails" initialModule="email" />;
   if (section === 'affiliates') return <AdminAffiliates />;
   if (section === 'social') return <AdminSocial />;

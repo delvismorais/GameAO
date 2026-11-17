@@ -386,6 +386,100 @@ export function orderVariables(order: NotificationOrder & { items?: Array<{ prod
   return { order_items: list };
 }
 
+type ManualNotificationOrder = NotificationOrder & {
+  items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string; player_id?: string | null; player_nickname?: string | null }>;
+};
+
+function statusError(status: DeliveryStatus, channel: NotificationChannel): string | undefined {
+  if (status === 'not_configured') {
+    return channel === 'email' ? 'SMTP não configurado.' : channel === 'sms' ? 'TelcoSMS não configurado.' : channel === 'whatsapp' ? 'WhatsApp Business API não configurada.' : 'Canal interno indisponível.';
+  }
+  if (status === 'skipped') return 'Destinatário ou modelo não disponível para este canal.';
+  return undefined;
+}
+
+export async function sendManualNotification(input: {
+  eventKey?: string;
+  channel: NotificationChannel;
+  order: ManualNotificationOrder;
+  recipient?: string | null;
+  subject?: string | null;
+  body: string;
+}): Promise<{ status: DeliveryStatus; error?: string }> {
+  const eventKey = input.eventKey ?? 'admin.manual_order';
+  const site = await getSiteConfig();
+  const order = input.order;
+  const variables: Record<string, string | number | null | undefined> = {
+    site_name: site.name,
+    site_url: publicSiteUrl(),
+    site_email: site.email,
+    site_phone: site.phone,
+    customer_name: order.customer_name,
+    customer_email: order.customer_email,
+    customer_phone: order.customer_phone,
+    order_number: order.order_number,
+    order_total: formatAoa(order.total_aoa),
+    order_status: ORDER_STATUS_LABELS[String(order.status ?? '')] ?? String(order.status ?? ''),
+    order_link: `${publicSiteUrl()}/pedido?order=${encodeURIComponent(order.order_number)}`,
+    payment_method: order.payment_method ?? '',
+    admin_link: `${publicSiteUrl()}/admin`,
+    ...orderVariables(order),
+  };
+  const renderedSubject = renderTemplate(String(input.subject ?? ''), variables);
+  const renderedBody = renderTemplate(input.body, variables);
+  const plainBody = renderedBody.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  const recipient = String(input.recipient ?? '').trim() || (input.channel === 'email' ? order.customer_email : order.customer_phone ?? '');
+  let status: DeliveryStatus;
+
+  if (input.channel === 'email') {
+    if (!recipient) status = 'skipped';
+    else status = await sendEmail({ eventKey, to: recipient, subject: renderedSubject || `Atualização da encomenda ${order.order_number}`, body: renderedBody, userId: order.user_id, orderId: order.id, site });
+  } else if (input.channel === 'whatsapp') {
+    if (!recipient) status = 'skipped';
+    else status = await sendWhatsApp({ eventKey, to: recipient, body: plainBody, userId: order.user_id, orderId: order.id });
+  } else if (input.channel === 'sms') {
+    if (!recipient) status = 'skipped';
+    else status = await sendSms({ eventKey, to: recipient, body: plainBody, userId: order.user_id, orderId: order.id });
+  } else if (order.user_id) {
+    const created = await createUserNotification({ userId: Number(order.user_id), eventKey, title: renderedSubject || `Atualização da encomenda ${order.order_number}`, message: renderedBody, link: String(variables.order_link), orderId: order.id });
+    status = created ? 'sent' : 'failed';
+    await logDelivery({ eventKey, channel: 'in_app', recipient: String(order.user_id), status, subject: renderedSubject, userId: order.user_id, orderId: order.id, payload: { manual: true } });
+  } else {
+    status = 'skipped';
+  }
+  return { status, error: statusError(status, input.channel) };
+}
+
+export async function sendEmailCampaign(input: {
+  campaignId: number;
+  subject: string;
+  bodyHtml: string;
+  leads: Array<{ email: string; name?: string | null }>;
+}): Promise<{ recipientCount: number; sentCount: number; failedCount: number }> {
+  const site = await getSiteConfig();
+  let sentCount = 0;
+  let failedCount = 0;
+  for (const lead of input.leads) {
+    const variables: Record<string, string> = {
+      site_name: site.name,
+      site_url: publicSiteUrl(),
+      customer_name: lead.name?.trim() || 'cliente',
+      customer_email: lead.email,
+      admin_link: `${publicSiteUrl()}/admin`,
+    };
+    const result = await sendEmail({
+      eventKey: `campaign.email.${input.campaignId}`,
+      to: lead.email,
+      subject: renderTemplate(input.subject, variables),
+      body: renderTemplate(input.bodyHtml, variables),
+      site,
+    });
+    if (result === 'sent') sentCount += 1;
+    else failedCount += 1;
+  }
+  return { recipientCount: input.leads.length, sentCount, failedCount };
+}
+
 export async function notifyOrderStatusChanged(order: NotificationOrder, status: string, extras?: Record<string, string | number | null | undefined>): Promise<DispatchResult> {
   const eventKey = STATUS_EVENTS[status] ?? 'order.created';
   return dispatch({

@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import { randomBytes, randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
-import nodemailer from 'nodemailer';
 import type { ViteDevServer } from 'vite';
 import { getPool, hasDatabaseUrl } from './db';
 import { initializePersistence } from './bootstrap';
@@ -18,6 +17,7 @@ import {
   notifyPaymentReview,
   notifyUserWelcome,
   emailConfigured,
+  sendEmailCampaign,
   type OrderStatus,
 } from './notifications';
 import { getPrivateObjectUrl, isPublicStorageConfigured, isStorageConfigured, publicObjectUrl, putObject, putPrivateObject, signedDownloadUrl } from './storage';
@@ -938,16 +938,29 @@ app.patch('/api/admin/notifications/:id/read', asyncRoute(async (request, respon
 app.get('/api/admin/email/templates', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [templates] = await getPool().query<any[]>(`SELECT * FROM email_templates ORDER BY name ASC LIMIT 100`); response.json({ templates }); }));
 app.put('/api/admin/email/templates/:id', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; await getPool().execute(`UPDATE email_templates SET name = ?, subject = ?, body_html = ?, body_text = ?, is_active = ?, updated_at = NOW() WHERE id = ?`, [String(body.name ?? ''), String(body.subject ?? ''), String(body.bodyHtml ?? ''), String(body.bodyText ?? ''), body.isActive === false ? 0 : 1, Number(request.params.id)]); await recordAudit(admin.id, 'email.template.update', 'email_template', String(request.params.id)); response.json({ ok: true }); }));
 app.get('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; const [campaigns] = await getPool().query<any[]>(`SELECT * FROM email_campaigns ORDER BY created_at DESC LIMIT 100`); response.json({ campaigns }); }));
-app.post('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; const name = String(body.name ?? '').trim(); const subject = String(body.subject ?? '').trim(); if (!name || !subject || !String(body.bodyHtml ?? '').trim()) { response.status(400).json({ error: 'invalid_campaign', message: 'Nome, assunto e conteúdo HTML são obrigatórios.' }); return; } const [result] = await getPool().execute<any>(`INSERT INTO email_campaigns (name, subject, body_html, body_text, audience_status, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)`, [name, subject, body.bodyHtml, body.bodyText ?? '', body.audienceStatus ?? 'subscribed', admin.id]); await recordAudit(admin.id, 'email.campaign.create', 'email_campaign', String(result.insertId)); response.status(201).json({ ok: true, id: result.insertId }); }));
+app.post('/api/admin/email/campaigns', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return; const body = request.body ?? {}; const name = String(body.name ?? '').trim(); const subject = String(body.subject ?? '').trim(); const audienceStatus = String(body.audienceStatus ?? 'subscribed'); if (!name || !subject || !String(body.bodyHtml ?? '').trim()) { response.status(400).json({ error: 'invalid_campaign', message: 'Nome, assunto e conteúdo HTML são obrigatórios.' }); return; } if (audienceStatus !== 'subscribed') { response.status(400).json({ error: 'invalid_audience', message: 'As campanhas só podem ser enviadas para leads subscritos.' }); return; } const [result] = await getPool().execute<any>(`INSERT INTO email_campaigns (name, subject, body_html, body_text, audience_status, created_by_user_id) VALUES (?, ?, ?, ?, ?, ?)`, [name, subject, body.bodyHtml, body.bodyText ?? '', 'subscribed', admin.id]); await recordAudit(admin.id, 'email.campaign.create', 'email_campaign', String(result.insertId)); response.status(201).json({ ok: true, id: result.insertId }); }));
 app.get('/api/admin/email/status', asyncRoute(async (request, response) => { if (!requireDatabase(response)) return; if (!await requireAdmin(request, response)) return; response.json({ configured: emailConfigured(), from: process.env.SMTP_FROM || process.env.EMAIL_FROM ? 'configurado' : 'não configurado' }); }));
 app.post('/api/admin/email/campaigns/:id/send', asyncRoute(async (request, response) => {
-  if (!requireDatabase(response)) return; const admin = await requireAdmin(request, response); if (!admin) return;
+  if (!requireDatabase(response)) return;
+  const admin = await requireAdmin(request, response); if (!admin) return;
   if (!emailConfigured()) { response.status(503).json({ error: 'email_not_configured', message: 'Configure servidor, utilizador, palavra-passe e remetente SMTP no Render antes de enviar.' }); return; }
-  const [[campaign]] = await getPool().query<any[]>(`SELECT * FROM email_campaigns WHERE id = ? LIMIT 1`, [Number(request.params.id)]); if (!campaign) { response.status(404).json({ error: 'campaign_not_found', message: 'Campanha não encontrada.' }); return; }
-  const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = ? LIMIT 5000`, [campaign.audience_status]);
-  const transporter = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT ?? 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } });
-  let sent = 0; for (const lead of leads) { try { await transporter.sendMail({ from: process.env.SMTP_FROM, to: lead.email, subject: campaign.subject, text: campaign.body_text, html: campaign.body_html }); sent++; } catch { /* campanha continua para os restantes destinatários */ } }
-  await getPool().execute(`UPDATE email_campaigns SET status = 'sent', recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [leads.length, sent, campaign.id]); await recordAudit(admin.id, 'email.campaign.send', 'email_campaign', String(campaign.id), { recipientCount: leads.length, sentCount: sent }); response.json({ ok: true, recipientCount: leads.length, sentCount: sent });
+  const campaignId = Number(request.params.id);
+  const [[campaign]] = await getPool().query<any[]>(`SELECT * FROM email_campaigns WHERE id = ? LIMIT 1`, [campaignId]);
+  if (!campaign) { response.status(404).json({ error: 'campaign_not_found', message: 'Campanha não encontrada.' }); return; }
+  if (String(campaign.audience_status) !== 'subscribed') { response.status(409).json({ error: 'invalid_audience', message: 'Esta campanha não está limitada a leads subscritos.' }); return; }
+  const [lock] = await getPool().execute<any>(`UPDATE email_campaigns SET status = 'sending', updated_at = NOW() WHERE id = ? AND audience_status = 'subscribed' AND (status IN ('draft', 'failed') OR (status = 'sending' AND updated_at < NOW() - INTERVAL '15 minutes'))`, [campaignId]);
+  if (Number(lock.affectedRows ?? 0) !== 1) { response.status(409).json({ error: 'campaign_in_progress', message: 'Esta campanha já foi enviada ou está a ser processada por outro administrador.' }); return; }
+  try {
+    const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = 'subscribed' LIMIT 5000`);
+    const result = await sendEmailCampaign({ campaignId, subject: String(campaign.subject), bodyHtml: String(campaign.body_html), leads });
+    const status = result.failedCount > 0 && result.sentCount === 0 ? 'failed' : 'sent';
+    await getPool().execute(`UPDATE email_campaigns SET status = ?, recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [status, result.recipientCount, result.sentCount, campaignId]);
+    await recordAudit(admin.id, 'email.campaign.send', 'email_campaign', String(campaignId), result);
+    response.json({ ok: result.sentCount > 0 || result.recipientCount === 0, ...result, status });
+  } catch (error) {
+    await getPool().execute(`UPDATE email_campaigns SET status = 'failed', updated_at = NOW() WHERE id = ?`, [campaignId]);
+    throw error;
+  }
 }));
 
 async function serveApp(): Promise<void> {
