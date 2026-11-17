@@ -23,17 +23,16 @@ export function AdminDashboard({ onNavigate }: { onNavigate: (section: AdminSect
   const o = overview.data?.orders;
   const s = stats.data;
   const kpis = [
-    { label: 'Faturação total', value: formatKz(o?.revenue), hint: `${formatKz(o?.revenueMonth)} este mês`, section: 'finance-reports' as AdminSectionId },
-    { label: 'Vendas hoje', value: formatKz(o?.revenueToday), hint: `${o?.total ?? 0} encomendas no total`, section: 'stats' as AdminSectionId },
-    { label: 'Pagamentos por confirmar', value: String(o?.paymentPending ?? 0), hint: `${o?.paid ?? 0} confirmados`, section: 'payments-pending' as AdminSectionId },
-    { label: 'Em processamento', value: String(o?.processing ?? 0), hint: `${o?.completed ?? 0} concluídas`, section: 'orders-processing' as AdminSectionId },
-    { label: 'Clientes', value: String(overview.data?.customers.total ?? 0), hint: `${overview.data?.products.active ?? 0} produtos ativos`, section: 'customers' as AdminSectionId },
+    { label: 'Faturação total', value: formatKz(o?.revenue), hint: `${formatKz(o?.revenueMonth)} este mês`, section: 'finance-reports' as AdminSectionId, tone: 'green' },
+    { label: 'Vendas hoje', value: formatKz(o?.revenueToday), hint: `${o?.total ?? 0} encomendas no total`, section: 'stats' as AdminSectionId, tone: 'teal' },
+    { label: 'Total de encomendas', value: String(o?.total ?? 0), hint: `${o?.processing ?? 0} em processamento`, section: 'orders' as AdminSectionId, tone: 'blue' },
+    { label: 'Clientes ativos', value: String(overview.data?.customers.total ?? 0), hint: `${o?.paymentPending ?? 0} pagamentos por confirmar`, section: 'customers' as AdminSectionId, tone: 'orange' },
   ];
   return (
     <div className="admin-dashboard">
       <div className="admin-head admin-head--inner"><div><p className="page-kicker">GameAO · operação</p><h1 className="page-title">Dashboard</h1><p className="page-subtitle">Visão em tempo real das vendas, pagamentos e atividade da loja.</p></div><label className="admin-period"><span>Período</span><select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={7}>Últimos 7 dias</option><option value={30}>Últimos 30 dias</option><option value={90}>Últimos 90 dias</option></select></label></div>
       {(overview.error || stats.error) && <Notice tone="error" message={overview.error || stats.error} />}
-      <section className="admin-kpis" aria-label="Indicadores">{kpis.map((kpi) => <button type="button" key={kpi.label} onClick={() => onNavigate(kpi.section)}><span>{kpi.label}</span><strong>{kpi.value}</strong><small>{kpi.hint}</small></button>)}</section>
+      <section className="admin-kpis" aria-label="Indicadores">{kpis.map((kpi) => <button type="button" className={`admin-kpi-card admin-kpi-card--${kpi.tone}`} key={kpi.label} onClick={() => onNavigate(kpi.section)}><span>{kpi.label}</span><strong>{kpi.value}</strong><small>{kpi.hint}</small><i aria-hidden="true" /></button>)}</section>
       <div className="admin-dashboard__grid">
         <AdminSection title="Evolução da faturação" subtitle={`Faturação diária nos últimos ${days} dias`} actions={<button type="button" className="btn btn--outline btn--sm" onClick={() => onNavigate('stats')}>Estatísticas</button>}>
           {stats.loading ? <p className="admin-state">A carregar…</p> : s?.daily?.length ? <LineChart data={s.daily.map((point) => ({ day: point.day, revenue: Number(point.revenue), orders: Number(point.orders) }))} /> : <Empty>Sem dados de vendas neste período.</Empty>}

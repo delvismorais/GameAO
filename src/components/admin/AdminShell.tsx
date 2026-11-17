@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ADMIN_NAV, GROUP_LABELS, SECTION_LABELS, type AdminSectionId } from './adminNav';
 import { AdminIcon } from './AdminIcon';
@@ -17,6 +17,7 @@ export function AdminShell({ section, onNavigate, children, pendingProofs = 0, p
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => Object.fromEntries(ADMIN_NAV.map((group) => [group.id, true])));
   const [drawer, setDrawer] = useState(false);
   const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void fetch('/api/auth/me', { credentials: 'include' }).then((response) => response.ok ? response.json() : null).then((data: { user?: { name: string; email: string; role: string } } | null) => { if (data?.user) setUser(data.user); }).catch(() => undefined);
@@ -41,8 +42,8 @@ export function AdminShell({ section, onNavigate, children, pendingProofs = 0, p
 
   const nav = (
     <nav className="admin-nav" aria-label="Menu administrativo">
-      <div className="admin-nav__identity"><img src="/assets/gameao-logo.png" alt="GameAO" /><span>Painel Admin<br />{user?.role === 'super_admin' ? 'Super Administrador' : user?.role === 'admin' ? 'Administrador' : 'Equipa GameAO'}</span></div>
-      <label className="admin-nav__search"><span className="sr-only">Pesquisar opções do menu</span><AdminIcon name="search" size={14} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar opções…" /></label>
+      <div className="admin-nav__identity"><img src="/assets/gameao-logo.png" alt="GameAO" /><span>ADMIN CONSOLE<br />{user?.role === 'super_admin' ? 'Super Administrador' : user?.role === 'admin' ? 'Administrador' : 'Equipa GameAO'}</span></div>
+      <label className="admin-nav__search"><span className="sr-only">Pesquisar opções do menu</span><AdminIcon name="search" size={14} /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar menu…" /></label>
       <div className="admin-nav__scroll">
         {filtered.map((group) => {
           const isOpen = search.trim() ? true : openGroups[group.id] !== false;
@@ -69,10 +70,14 @@ export function AdminShell({ section, onNavigate, children, pendingProofs = 0, p
         <div className="admin-topbar">
           <button type="button" className="admin-topbar__menu" onClick={() => setDrawer(true)} aria-label="Abrir menu administrativo"><AdminIcon name="menu" /></button>
           <div className="admin-topbar__crumb"><span>{activeGroup ? GROUP_LABELS[activeGroup.id] : 'Administração'}</span><AdminIcon name="chevron" size={12} /><strong>{SECTION_LABELS[section] ?? 'Dashboard'}</strong></div>
+          <button type="button" className="admin-topbar__search" onClick={() => { searchRef.current?.focus(); setDrawer(false); }}><AdminIcon name="search" size={15} /><span>Pesquisar qualquer coisa...</span><kbd>⌘ K</kbd></button>
           <div className="admin-topbar__tools">
+            <button type="button" className="admin-topbar__action admin-topbar__action--primary" onClick={() => onNavigate('orders')}><AdminIcon name="plus" size={14} /> Nova encomenda</button>
+            <button type="button" className="admin-topbar__icon-action" title="Alternar tema" aria-label="Alternar tema"><AdminIcon name="heart" size={16} /></button>
+            <button type="button" className="admin-topbar__icon-action" title="Personalizar painel" aria-label="Personalizar painel"><AdminIcon name="settings" size={16} /></button>
             <NotificationBell endpoint="/api/admin/notifications?limit=10" markAllEndpoint="/api/admin/notifications/read-all" markOneEndpoint={(id) => `/api/admin/notifications/${id}/read`} viewAllHref="/admin?secao=notifications" compact />
-            <Link to="/" className="admin-topbar__link" title="Ver website">Ver website</Link>
-            <div className="admin-topbar__user" title={user?.email}><span>{user?.name ?? 'Administrador'}</span><small>{user?.role === 'super_admin' ? 'Super Admin' : user?.role ?? ''}</small></div>
+            <div className="admin-topbar__user" title={user?.email}><span className="admin-topbar__avatar">{(user?.name ?? 'AS').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</span><span className="admin-topbar__user-copy"><strong>{user?.name ?? 'Administrador'}</strong><small>{user?.role === 'super_admin' ? 'Super Admin' : user?.role ?? 'Admin'}</small></span></div>
+            <Link to="/" className="admin-topbar__logout" title="Ver website"><AdminIcon name="home" size={15} /></Link>
           </div>
         </div>
         {children}
