@@ -1,5 +1,5 @@
 import { Breadcrumbs } from '../components/ui/Breadcrumbs';
-import { ABOUT_BLOCKS, ABOUT_FEATURES, TEAM } from '../data/site';
+import { ABOUT_BLOCKS, ABOUT_FEATURES, FOUNDER_PROFILE, GAMEAO_LOGO_URL } from '../data/site';
 
 export function About() {
   return (
@@ -7,22 +7,23 @@ export function About() {
       <div className="container">
         <Breadcrumbs items={[{ label: 'Sobre Nós' }]} />
         <section className="about-intro">
-          <img src="/assets/about/store.jpg" alt="Interior de uma loja de videojogos" />
+          <img className="about-intro__logo" src={GAMEAO_LOGO_URL} alt="Logo da GameAO" />
           <div>
-            <h1>Sobre a nossa loja</h1>
+            <p className="page-kicker">Sobre a GameAO</p>
+            <h1>O teu universo gamer, num só lugar</h1>
             <p>
-              A GameAO é uma loja de videojogos pensada para jogadores em Angola. Reunimos num só
-              lugar títulos para PC, Xbox e PlayStation, com informação clara
-              sobre cada jogo.
+              A GameAO é uma loja online dedicada ao universo dos videojogos e do entretenimento
+              digital, criada para aproximar os jogadores de uma experiência de compra simples,
+              acessível e confiável em Angola.
             </p>
             <p>
-              A GameAO preserva uma experiência visual inspirada no GameShop e está a evoluir para
-              uma plataforma administrável de raiz. Os preços
-              atualizam-se automaticamente.
+              A nossa plataforma ajuda-te a descobrir, consultar e adquirir produtos para as tuas
+              plataformas preferidas, com informação clara sobre produtos, preços, disponibilidade,
+              pagamento e acompanhamento de encomendas.
             </p>
             <p className="about-intro__note">
-              Os nomes comerciais, capas e marcas apresentados pertencem aos respetivos titulares.
-              Esta página não representa uma loja oficial.
+              Jogar é diversão, competição, criatividade, conexão e expressão. É essa energia que
+              orienta cada melhoria da GameAO e a construção de uma comunidade gamer mais próxima.
             </p>
           </div>
         </section>
@@ -38,15 +39,16 @@ export function About() {
         </section>
 
         <section className="team">
-          <h2 className="section-heading__title">Conheça a nossa equipa</h2>
+          <h2 className="section-heading__title">Quem está por trás da GameAO</h2>
           <div className="team-grid">
-            {TEAM.map((member) => (
-              <article key={member.name} className="team-member">
-                <img src={member.image} alt={`Retrato de ${member.name}`} loading="lazy" />
-                <h3>{member.name}</h3>
-                <p>{member.role}</p>
-              </article>
-            ))}
+            <article className="team-member team-member--founder">
+              <img src={FOUNDER_PROFILE.image} alt={`Fotografia de ${FOUNDER_PROFILE.name}`} loading="lazy" />
+              <div>
+                <p className="team-member__role">{FOUNDER_PROFILE.role}</p>
+                <h3>{FOUNDER_PROFILE.name}</h3>
+                <p>{FOUNDER_PROFILE.bio}</p>
+              </div>
+            </article>
           </div>
         </section>
 

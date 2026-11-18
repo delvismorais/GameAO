@@ -48,7 +48,7 @@
 
 - [x] `/category/news` lista os 9 artigos com imagem, título, autor, data, categoria, excerto, Ler Mais e paginação; a barra lateral (artigos recentes e etiquetas) está presente.
 - [x] `/blog/:slug` apresenta título, meta, imagem, conteúdo em português, etiquetas, partilha, comentários (lista e formulário) e artigos relacionados.
-- [x] `/about-us` reproduz imagem e texto de apresentação, 3 vantagens, equipa com 8 membros e 3 blocos finais; `/contact-us` tem os contactos oficiais GameAO e formulário validado com mensagem de sucesso; `/faqs` tem perguntas em duas colunas e acordeão expansível.
+- [x] `/about-us` apresenta o logo real da GameAO, texto de apresentação, 3 vantagens, apenas o fundador Delvis de Morais com a sua fotografia e dados, e 3 blocos finais; `/contact-us` tem os contactos oficiais GameAO e formulário validado com mensagem de sucesso; `/faqs` tem perguntas em duas colunas e acordeão expansível.
 
 ## 8. Localização integral em português de Angola
 
@@ -145,3 +145,12 @@
 - [ ] As entregas devem poder ser filtradas por canal, estado e número da encomenda e mostrar o erro devolvido pelo provedor quando existir.
 - [ ] As campanhas devem permitir guardar rascunhos, personalizar assunto/HTML/texto, escolher audiência de leads subscritos, pré-visualizar e pedir confirmação antes de enviar em massa; cada destinatário deve usar o seu nome e ficar registado no histórico.
 - [ ] A interface mobile deve manter todas as funções num drawer/tabs roláveis, converter filtros e formulários para uma coluna, manter tabelas em scroll contido e evitar overflow horizontal do viewport em 375px, 390px, 768px e desktop.
+
+## 19. Correções de regressão — novembro de 2026
+
+- [x] O catálogo de produtos do admin ocupa uma única coluna disponível no desktop/tablet, usa colunas estáveis e não força largura mínima de 980px.
+- [x] A listagem de produtos do admin transforma-se em cartões no mobile, com ações e metadados legíveis sem overflow horizontal.
+- [x] O filtro de stock passou a usar `&&` entre as condições, evitando incluir produtos fora do controlo de stock previsto.
+- [x] As páginas de Política de Privacidade e Termos e Condições foram reescritas com contactos GameAO, data de atualização, secções completas e sem placeholders.
+- [x] A página Sobre Nós deixou de apresentar equipa genérica: usa o logo real GameAO e apresenta apenas Delvis de Morais como CEO & Fundador, com a fotografia e biografia fornecidas.
+- [x] Typecheck, build de produção, rotas profundas HTTP e inspeção visual das páginas públicas e do painel foram validados sem erros de runtime.

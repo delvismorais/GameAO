@@ -202,31 +202,29 @@ export const HOME2_FEATURES: Feature[] = [
   },
 ];
 
-export const TEAM = [
-  { name: 'Julius L. Hopson', role: 'Programador', image: '/assets/team/member-1.jpg' },
-  { name: 'Harold R. Speciale', role: 'Experiência do Cliente', image: '/assets/team/member-2.jpg' },
-  { name: 'Jason K. Johnson', role: 'Marketing', image: '/assets/team/member-3.jpg' },
-  { name: 'Orlando A. Steward', role: 'Programador', image: '/assets/team/member-4.jpg' },
-  { name: 'David M. Beverly', role: 'Experiência do Cliente', image: '/assets/team/member-5.jpg' },
-  { name: 'Gerald C. Foster', role: 'Marketing', image: '/assets/team/member-6.jpg' },
-  { name: 'Laurence B. Grant', role: 'Vendas', image: '/assets/team/member-7.jpg' },
-  { name: 'Darrell D. Killian', role: 'Vendas', image: '/assets/team/member-8.jpg' },
-];
+export const GAMEAO_LOGO_URL = 'https://gameao.onrender.com/assets/gameao-logo.png';
+
+export const FOUNDER_PROFILE = {
+  name: 'Delvis de Morais',
+  role: 'CEO & Fundador',
+  image: 'https://delvisfolio-ka5a62ww.manus.space/favicon.png',
+  bio: 'Empreendedor digital apaixonado por inovação e transformação tecnológica. Fundador da Morário Digital, GameAO, MD Recargas e UniPrep, dedicado a criar soluções que aproximam pessoas e negócios através da tecnologia.',
+};
 
 export const ABOUT_BLOCKS = [
   {
     title: 'O que fazemos',
-    text: 'Selecionamos videojogos para PC, Xbox e PlayStation, com apoio em português. Cada título é escolhido pela qualidade e pela procura da comunidade angolana.',
+    text: 'Disponibilizamos produtos e conteúdos ligados ao universo dos videojogos, com informação clara, preços em kwanzas e apoio em português para jogadores em Angola.',
     image: '/assets/about/block-1.jpg',
   },
   {
     title: 'A nossa missão',
-    text: 'Tornar o acesso aos videojogos mais simples em Angola: informação clara, preços transparentes e uma experiência de compra que respeita o tempo de cada jogador.',
+    text: 'Tornar o universo gaming mais acessível, proporcionando uma experiência de compra simples, transparente e orientada às necessidades de cada jogador.',
     image: '/assets/about/block-2.jpg',
   },
   {
-    title: 'A nossa história',
-    text: 'A GameAO nasce de uma paixão partilhada pelos jogos e da vontade de criar uma loja local com identidade própria. A plataforma nasce para aproximar jogadores angolanos dos seus jogos favoritos.',
+    title: 'A nossa visão',
+    text: 'Construir uma referência no comércio digital de produtos gaming, aproximando cada vez mais jogadores das suas experiências favoritas e contribuindo para o crescimento da comunidade gamer em Angola.',
     image: '/assets/about/block-3.jpg',
   },
 ];

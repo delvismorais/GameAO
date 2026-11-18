@@ -85,7 +85,7 @@ function AdminStock({ products, reload }: { products: Product[]; reload: () => P
   const [draft, setDraft] = useState<Record<string, { stock: string; threshold: string }>>({});
   const [message, setMessage] = useState('');
   const [tone, setTone] = useState<'success' | 'error'>('success');
-  const rows = products.filter((product) => product.categoryType !== 'physical' || product.stockQuantity !== null || product.stockQuantity !== undefined);
+  const rows = products.filter((product) => product.categoryType !== 'physical' && product.stockQuantity !== null && product.stockQuantity !== undefined);
   const save = async (product: Product) => {
     const entry = draft[product.id] ?? { stock: product.stockQuantity == null ? '' : String(product.stockQuantity), threshold: String(product.lowStockThreshold ?? 5) };
     const result = await api(`/api/admin/products/${encodeURIComponent(product.id)}`, { method: 'PUT', body: JSON.stringify({ stockQuantity: entry.stock === '' ? null : Number(entry.stock), lowStockThreshold: Number(entry.threshold) }) });
