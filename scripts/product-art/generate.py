@@ -373,7 +373,7 @@ CATALOG = [
     ("jogos-digital-ps4ps5", "royal", "gamepad", "MÍDIA DIGITAL", ["JOGOS", "PS4 · PS5"], "", "ENTREGA NA CONTA"),
     ("canva-pro-30-dias", "canva", "canva", "DESIGN PRO", ["CANVA PRO"], "", "30 DIAS"),
     ("robux", "steel", "robux", "MOEDAS ROBLOX", ["ROBUX"], "", "ENTREGA RÁPIDA"),
-    ("robux-gif-card", "steel", "robux", "GIFT CARD", ["ROBUX"], "", "CÓDIGO DIGITAL"),
+    ("robux-gif-card", "jade", "ticket", "GIFT CARD", ["ROBUX"], "", "CÓDIGO DIGITAL"),
     ("luvinha-gamer", "amber", "glove", "ACESSÓRIO GAMER", ["LUVINHA"], "", "ANTIDERRAPANTE"),
     ("contas-free-fire-blue-lock", "violet", "diamonds", "CONTAS FREE FIRE", ["BLUE LOCK"], "", "CONTA PREMIUM"),
 ]
