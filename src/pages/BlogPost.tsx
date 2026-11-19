@@ -5,33 +5,40 @@ import { BlogSidebar } from '../components/blog/BlogSidebar';
 import { BlogCard } from '../components/blog/BlogCard';
 import { Rating } from '../components/ui/Rating';
 import { Icon } from '../components/ui/Icon';
-import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { formatDatePt } from '../lib/pricing';
+import { useSeo } from '../lib/seo';
 import { getPostBySlug, POSTS } from '../data/posts';
 
 export function BlogPost() {
   const { slug } = useParams();
   const post = slug ? getPostBySlug(slug) : undefined;
-  const { comments, addComment } = useStore();
   const { showToast } = useToast();
+  useSeo({
+    title: post ? `${post.title} — GameAO` : 'Notícias — GameAO',
+    description: post?.excerpt,
+    path: post ? `/blog/${post.slug}` : undefined,
+    image: post?.image,
+    type: 'article',
+  });
   const [form, setForm] = useState({ author: '', email: '', text: '' });
   const [remoteComments, setRemoteComments] = useState<Array<{ id: number; author_name: string; content: string; created_at: string }>>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const postSlug = post?.slug ?? '';
+  const totalComments = Math.max(post?.commentsCount ?? 0, remoteComments.length);
+  const related = POSTS.filter((item) => item.slug !== post?.slug).slice(0, 3);
+
+  useEffect(() => {
+    if (!postSlug) return;
+    let active = true;
+    setCommentsLoading(true);
+    void fetch(`/api/blog/posts/${encodeURIComponent(postSlug)}/comments`).then((response) => response.ok ? response.json() : { comments: [] }).then((data: { comments?: typeof remoteComments }) => { if (active) setRemoteComments(data.comments ?? []); }).catch(() => undefined).finally(() => { if (active) setCommentsLoading(false); });
+    return () => { active = false; };
+  }, [postSlug]);
 
   if (!post) return <Navigate to="/category/news" replace />;
 
-  const postComments = comments.filter((comment) => comment.postSlug === post.slug);
-  const totalComments = post.commentsCount + remoteComments.length + (remoteComments.length ? 0 : postComments.length);
-  const related = POSTS.filter((item) => item.slug !== post.slug).slice(0, 3);
-
-  useEffect(() => {
-    let active = true;
-    setCommentsLoading(true);
-    void fetch(`/api/blog/posts/${encodeURIComponent(post.slug)}/comments`).then((response) => response.ok ? response.json() : { comments: [] }).then((data: { comments?: typeof remoteComments }) => { if (active) setRemoteComments(data.comments ?? []); }).catch(() => undefined).finally(() => { if (active) setCommentsLoading(false); });
-    return () => { active = false; };
-  }, [post.slug]);
 
   const share = async () => {
     try {
@@ -56,8 +63,7 @@ export function BlogPost() {
       setForm({ author: '', email: '', text: '' });
       showToast(data?.message || 'Comentário recebido para moderação.', 'info');
     } catch (error) {
-      addComment(post.slug, form.author, form.text);
-      showToast(error instanceof Error ? `${error.message} O comentário ficou guardado localmente.` : 'Não foi possível enviar o comentário.', 'error');
+      showToast(error instanceof Error ? error.message : 'Não foi possível enviar o comentário. Tente novamente.', 'error');
     } finally { setSubmitting(false); }
   };
 
@@ -130,17 +136,10 @@ export function BlogPost() {
                 <div className="comment__body"><strong>{comment.author_name}</strong><span>{formatDatePt(comment.created_at)}</span><p>{comment.content}</p></div>
               </div>
             ))}
-            {!commentsLoading && remoteComments.length === 0 && postComments.map((comment) => (
-              <div className="comment" key={comment.id}>
-                <div className="comment__avatar">{comment.author.charAt(0).toUpperCase()}</div>
-                <div className="comment__body">
-                  <strong>{comment.author}</strong>
-                  <span>{formatDatePt(comment.date)}</span>
-                  <p>{comment.text}</p>
-                </div>
-              </div>
-            ))}
 
+            {!commentsLoading && remoteComments.length === 0 && (
+              <p className="comments__empty">Ainda não há comentários publicados. Seja o primeiro a participar.</p>
+            )}
             <form className="comment-form" onSubmit={submit}>
               <h2>Deixar um comentário</h2>
               <p>O seu endereço de email não será publicado. Os comentários são analisados pela equipa antes de ficarem visíveis.</p>

@@ -6,6 +6,7 @@ import { Pagination } from '../components/ui/Pagination';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Icon } from '../components/ui/Icon';
 import { POSTS } from '../data/posts';
+import { useSeo } from '../lib/seo';
 
 const PER_PAGE = 6;
 
@@ -26,6 +27,11 @@ export function News() {
     setParams(paramsNext, { replace: true });
   };
 
+  useSeo({
+    title: 'Notícias e novidades gaming | GameAO',
+    description: 'Análises, lançamentos e guias sobre videojogos, Free Fire, Roblox e consolas.',
+    path: '/category/news',
+  });
   return (
     <PageShell crumbs={[{ label: 'Notícias' }]}>
       <div className="sidebar-layout">

@@ -6,6 +6,7 @@ import { Icon } from '../components/ui/Icon';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { formatDatePt, formatUsdAsAoa } from '../lib/pricing';
+import { useSeo } from '../lib/seo';
 
 type Mode = 'login' | 'register' | 'lost';
 
@@ -91,6 +92,7 @@ export function Account() {
     else showToast('Não foi possível atualizar os dados pessoais.', 'error');
   };
 
+  useSeo({ title: 'A minha conta | GameAO', path: '/my-account', noindex: true });
   return (
     <PageShell crumbs={[{ label: 'Minha Conta' }]}>
       <h1 className="page-title">Minha Conta</h1>

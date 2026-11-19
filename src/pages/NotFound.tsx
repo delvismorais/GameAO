@@ -1,8 +1,14 @@
 import { Link } from 'react-router-dom';
 import { PageShell } from '../components/layout/PageShell';
 import { EmptyState } from '../components/ui/EmptyState';
+import { useSeo } from '../lib/seo';
 
 export function NotFound() {
+  useSeo({
+    title: 'Página não encontrada | GameAO',
+    description: 'A página que procura não existe ou foi movida.',
+    noindex: true,
+  });
   return (
     <PageShell crumbs={[{ label: 'Página não encontrada' }]}>
       <EmptyState

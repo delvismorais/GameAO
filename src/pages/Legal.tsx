@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useSeo } from '../lib/seo';
 
 type LegalKind = 'privacy' | 'terms';
 type LegalSection = { title: string; paragraphs?: string[]; bullets?: string[] };
@@ -165,6 +166,11 @@ function LegalSectionView({ section }: { section: LegalSection }) {
 }
 
 export function Legal({ kind }: { kind: LegalKind }) {
+  useSeo({
+    title: kind === 'privacy' ? 'Política de privacidade | GameAO' : 'Termos e condições | GameAO',
+    description: kind === 'privacy' ? 'Como a GameAO recolhe, utiliza e protege os seus dados pessoais.' : 'Condições de venda, entregas, devoluções e garantias da GameAO.',
+    path: kind === 'privacy' ? '/politica-de-privacidade' : '/termos-e-condicoes',
+  });
   const privacy = kind === 'privacy';
   const sections = privacy ? PRIVACY_SECTIONS : TERMS_SECTIONS;
   return (

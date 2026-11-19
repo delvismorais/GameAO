@@ -10,26 +10,60 @@ import { ProductGrid } from '../components/shop/ProductGrid';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
 import { formatDatePt } from '../lib/pricing';
+import { useSeo } from '../lib/seo';
 import {
   CATEGORIES,
   getEffectivePriceUsd,
   getProductBySlug,
 } from '../data/products';
 
+type ReviewItem = { id: number; author: string; rating: number; text: string; date: string; verified?: boolean };
+
 export function Product() {
   const { slug } = useParams();
-  const { catalogProducts, catalogCategories, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared, reviews, addReview } = useStore();
+  const { catalogProducts, catalogCategories, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared } = useStore();
   const product = slug ? catalogProducts.find((item) => item.slug === slug) ?? getProductBySlug(slug) : undefined;
   const { showToast } = useToast();
+  const seoPrice = product ? Number(product.salePriceUsd ?? product.basePriceUsd ?? 0) : 0;
+  useSeo({
+    title: product ? `${product.name} — GameAO` : 'Produto — GameAO',
+    description: product?.shortDescription,
+    path: product ? `/product/${product.slug}` : undefined,
+    image: product?.image,
+    type: 'product',
+    jsonLd: product
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: product.name,
+          description: product.shortDescription,
+          image: product.image,
+          brand: { '@type': 'Brand', name: 'GameAO' },
+          offers: { '@type': 'Offer', price: seoPrice.toFixed(2), priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
+        }
+      : undefined,
+  });
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState('description');
   const [lightbox, setLightbox] = useState(false);
   const [form, setForm] = useState({ author: '', email: '', rating: '5', text: '' });
+  const [productReviews, setProductReviews] = useState<ReviewItem[]>([]);
+  const [reviewBusy, setReviewBusy] = useState(false);
 
   useEffect(() => {
     setQty(1);
     setTab('description');
   }, [slug]);
+
+  useEffect(() => {
+    if (!product?.id) { setProductReviews([]); return; }
+    let active = true;
+    fetch(`/api/products/${encodeURIComponent(product.id)}/reviews`)
+      .then((response) => (response.ok ? response.json() : { reviews: [] }))
+      .then((data: { reviews?: ReviewItem[] }) => { if (active) setProductReviews(data.reviews ?? []); })
+      .catch(() => { if (active) setProductReviews([]); });
+    return () => { active = false; };
+  }, [product?.id]);
 
   useEffect(() => {
     if (!lightbox) return;
@@ -57,7 +91,6 @@ export function Product() {
   if (!product) return <Navigate to="/shop" replace />;
 
   const effective = getEffectivePriceUsd(product);
-  const productReviews = reviews.filter((review) => review.productId === product.id);
   const categoryLabel = product.categoryNames?.[0] ?? catalogCategories.find((category) => category.slug === product.categories[0])?.name ?? 'Jogos';
   const categoryLink = `/product-category/${product.categories[0]}`;
 
@@ -75,15 +108,31 @@ export function Product() {
     }
   };
 
-  const submitReview = (event: React.FormEvent) => {
+  const submitReview = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.author.trim() || !form.email.trim() || form.text.trim().length < 10) {
       showToast('Preencha o nome, email e uma avaliação com pelo menos 10 caracteres.', 'error');
       return;
     }
-    addReview(product.id, form.author, Number(form.rating), form.text);
-    setForm({ author: '', email: '', rating: '5', text: '' });
-    showToast('Avaliação registada. Obrigado pelo contributo!');
+    setReviewBusy(true);
+    try {
+      const response = await fetch(`/api/products/${encodeURIComponent(product.id)}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ author: form.author, email: form.email, rating: Number(form.rating), content: form.text }),
+      });
+      const data = await response.json().catch(() => null) as { message?: string } | null;
+      if (response.ok) {
+        setForm({ author: '', email: '', rating: '5', text: '' });
+        showToast(data?.message ?? 'Avaliação enviada para moderação.');
+      } else {
+        showToast(data?.message ?? 'Não foi possível enviar a avaliação.', 'error');
+      }
+    } catch {
+      showToast('Não foi possível contactar o servidor. Tente novamente.', 'error');
+    } finally {
+      setReviewBusy(false);
+    }
   };
 
   return (
@@ -175,7 +224,7 @@ export function Product() {
             </p>
             <p>
               <strong>Etiquetas:</strong>{' '}
-              {product.tags.map((tag, index) => (
+              {product.tags.filter((tag) => !/^migrado/i.test(tag)).map((tag, index) => (
                 <span key={tag}>
                   {index > 0 && ', '}
                   <Link to={`/shop?tag=${encodeURIComponent(tag)}`}>{tag}</Link>
@@ -243,15 +292,15 @@ export function Product() {
             <form className="review-form" onSubmit={submitReview}>
               <h3>Adicionar uma avaliação</h3>
               <p className="review-form__note">
-                A sua opinião ajuda outros jogadores. A avaliação fica guardada neste dispositivo.
+                A sua opinião ajuda outros jogadores. A avaliação é enviada para a equipa GameAO e publicada depois de aprovada.
               </p>
               <div className="review-form__rating">
                 <span>A sua classificação</span>
                 <div className="review-form__stars">
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
+                <button
+                  key={star}
+                  type="button"
                       className={Number(form.rating) >= star ? 'is-active' : ''}
                       onClick={() => setForm((current) => ({ ...current, rating: String(star) }))}
                       aria-label={`${star} estrelas`}
@@ -275,7 +324,7 @@ export function Product() {
                 <span>A sua avaliação *</span>
                 <textarea rows={4} value={form.text} onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))} required />
               </label>
-              <button type="submit" className="btn btn--primary">Enviar avaliação</button>
+              <button type="submit" className="btn btn--primary" disabled={reviewBusy}>{reviewBusy ? 'A enviar…' : 'Publicar avaliação'}</button>
             </form>
           </div>
         )}

@@ -3,6 +3,7 @@ import { Breadcrumbs } from '../components/ui/Breadcrumbs';
 import { Icon } from '../components/ui/Icon';
 import { useToast } from '../context/ToastContext';
 import { CONTACT_INFO } from '../data/site';
+import { useSeo } from '../lib/seo';
 
 export function Contact() {
   const { showToast } = useToast();
@@ -28,6 +29,11 @@ export function Contact() {
     }
   };
 
+  useSeo({
+    title: 'Contacto e apoio ao cliente | GameAO',
+    description: 'Fale com a equipa GameAO por WhatsApp ou email. Apoio em português, todos os dias.',
+    path: '/contact-us',
+  });
   return (
     <div className="static-page contact-page">
       <div className="container">

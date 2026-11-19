@@ -1,33 +1,44 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { SettingsProvider } from './context/SettingsContext';
 import { StoreProvider } from './context/StoreContext';
 import { ToastProvider } from './context/ToastContext';
 import { Layout } from './components/layout/Layout';
 import { Home1 } from './pages/Home1';
 import { Home2 } from './pages/Home2';
-import { Shop } from './pages/Shop';
-import { Category } from './pages/Category';
-import { Product } from './pages/Product';
-import { Cart } from './pages/Cart';
-import { Checkout } from './pages/Checkout';
-import { OrderConfirmation } from './pages/OrderConfirmation';
-import { Wishlist } from './pages/Wishlist';
-import { Compare } from './pages/Compare';
-import { Account } from './pages/Account';
-import { AccountOrders } from './pages/AccountOrders';
-import { Affiliate } from './pages/Affiliate';
-import { News } from './pages/News';
-import { BlogPost } from './pages/BlogPost';
-import { About } from './pages/About';
-import { Contact } from './pages/Contact';
-import { Faq } from './pages/Faq';
-import { Admin } from './pages/Admin';
-import { OrderTracking } from './pages/OrderTracking';
-import { NotFound } from './pages/NotFound';
-import { Legal } from './pages/Legal';
 import { captureAffiliateCodeFromUrl } from './lib/affiliate';
 import { useHomepageContent } from './lib/homepageContent';
+
+// As páginas secundárias são carregadas a pedido, o que mantém o arranque leve.
+const Shop = lazy(() => import('./pages/Shop').then((module) => ({ default: module.Shop })));
+const Category = lazy(() => import('./pages/Category').then((module) => ({ default: module.Category })));
+const Product = lazy(() => import('./pages/Product').then((module) => ({ default: module.Product })));
+const Cart = lazy(() => import('./pages/Cart').then((module) => ({ default: module.Cart })));
+const Checkout = lazy(() => import('./pages/Checkout').then((module) => ({ default: module.Checkout })));
+const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation').then((module) => ({ default: module.OrderConfirmation })));
+const Wishlist = lazy(() => import('./pages/Wishlist').then((module) => ({ default: module.Wishlist })));
+const Compare = lazy(() => import('./pages/Compare').then((module) => ({ default: module.Compare })));
+const Account = lazy(() => import('./pages/Account').then((module) => ({ default: module.Account })));
+const AccountOrders = lazy(() => import('./pages/AccountOrders').then((module) => ({ default: module.AccountOrders })));
+const Affiliate = lazy(() => import('./pages/Affiliate').then((module) => ({ default: module.Affiliate })));
+const News = lazy(() => import('./pages/News').then((module) => ({ default: module.News })));
+const BlogPost = lazy(() => import('./pages/BlogPost').then((module) => ({ default: module.BlogPost })));
+const About = lazy(() => import('./pages/About').then((module) => ({ default: module.About })));
+const Contact = lazy(() => import('./pages/Contact').then((module) => ({ default: module.Contact })));
+const Faq = lazy(() => import('./pages/Faq').then((module) => ({ default: module.Faq })));
+const Admin = lazy(() => import('./pages/Admin').then((module) => ({ default: module.Admin })));
+const OrderTracking = lazy(() => import('./pages/OrderTracking').then((module) => ({ default: module.OrderTracking })));
+const NotFound = lazy(() => import('./pages/NotFound').then((module) => ({ default: module.NotFound })));
+const Legal = lazy(() => import('./pages/Legal').then((module) => ({ default: module.Legal })));
+
+function PageLoader() {
+  return (
+    <div className="page-loader" role="status" aria-live="polite">
+      <span className="page-loader__spinner" aria-hidden="true" />
+      <span>A carregar…</span>
+    </div>
+  );
+}
 
 function PrimaryHomepage() {
   const { content, posts } = useHomepageContent();
@@ -44,7 +55,8 @@ export default function App() {
         <ToastProvider>
           <BrowserRouter>
             <Layout>
-              <Routes>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
                 <Route path="/" element={<PrimaryHomepage />} />
                 <Route path="/homepage-1" element={<Home1 />} />
                 <Route path="/homepage-2" element={<Home2 />} />
@@ -70,7 +82,8 @@ export default function App() {
                 <Route path="/acompanhar-pedido" element={<OrderTracking />} />
                 <Route path="/pedido" element={<OrderTracking />} />
                 <Route path="*" element={<NotFound />} />
-              </Routes>
+                </Routes>
+              </Suspense>
             </Layout>
           </BrowserRouter>
         </ToastProvider>

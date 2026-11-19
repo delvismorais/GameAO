@@ -1301,3 +1301,61 @@
     min-height: 37px;
   }
 }
+
+/* Carregamento de rotas (code splitting) */
+.page-loader {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  min-height: 46vh;
+  padding: 40px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.page-loader__spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--line-light, #e6e9ef);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: page-loader-spin .8s linear infinite;
+}
+@keyframes page-loader-spin { to { transform: rotate(360deg); } }
+
+/* Envio de comprovativo */
+.proof-upload {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line-light, #e6e9ef);
+  background: #fafbfc;
+}
+.proof-upload .field { margin: 0; }
+.proof-upload input[type="file"] {
+  padding: 10px;
+  background: #fff;
+  border: 1px dashed #c9d1dd;
+  cursor: pointer;
+}
+.proof-upload input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  padding: 8px 14px;
+  border: 0;
+  background: var(--dark, #0b1220);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  cursor: pointer;
+}
+.proof-upload__hint { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.proof-upload__message { margin: 0; padding: 10px 12px; font-size: 12px; border-left: 3px solid var(--primary); background: #fff; }
+.proof-upload__message--error { border-left-color: #c0392b; color: #8e2a20; background: #fdf3f2; }
+.proof-upload__message--success { border-left-color: #1e8449; color: #17663a; background: #f1faf4; }
+.proof-upload .btn { justify-self: start; }
+
+/* Comentários do blog */
+.comments__empty { padding: 16px 0; color: var(--muted); font-size: 13px; }

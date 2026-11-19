@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import type { ViteDevServer } from 'vite';
@@ -20,10 +20,14 @@ import {
   sendEmailCampaign,
   type OrderStatus,
 } from './notifications';
-import { getPrivateObjectUrl, isPublicStorageConfigured, isStorageConfigured, publicObjectUrl, putObject, putPrivateObject, signedDownloadUrl } from './storage';
+import { getPrivateObjectUrl, putMediaObject } from './storage';
 import { registerCommunicationRoutes } from './routes/communication';
 import { registerAdminModuleRoutes } from './routes/admin-modules';
+import { registerReviewRoutes } from './routes/reviews';
 import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } from './affiliates';
+import { hasCapability, rateLimit, sameOriginGuard, securityHeaders, type Capability } from './security';
+import { registerMediaRoutes } from './media';
+import { injectSeo, registerSeoRoutes } from './seo';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -31,10 +35,13 @@ const port = Number(process.env.PORT ?? 3000);
 let databaseState: { configured: boolean; ready: boolean; error?: string } = { configured: hasDatabaseUrl(), ready: false };
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(securityHeaders);
+registerSeoRoutes(app);
 app.use('/api', express.json({ limit: '1mb' }));
-const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+app.use('/api', sameOriginGuard);
+const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024, files: 1 } });
 const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
-const mediaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 
 const PROOF_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf']);
 const PROOF_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
@@ -81,10 +88,32 @@ function requireDatabase(response: Response): boolean {
   return true;
 }
 
-async function requireAdmin(request: Request, response: Response) {
+const PATH_CAPABILITIES: Array<[RegExp, Capability]> = [
+  [/^\/api\/admin\/(products|variants|categories)/i, 'products'],
+  [/^\/api\/admin\/(payment-methods|transactions|affiliates)/i, 'payments'],
+  [/^\/api\/admin\/(content|banners|popups|comments|site-settings|homepage|notification-templates)/i, 'content'],
+  [/^\/api\/admin\/(marketing|email|coupons)/i, 'marketing'],
+  [/^\/api\/admin\/(customers)/i, 'customers'],
+  [/^\/api\/admin\/(admins|sessions|audit-logs)/i, 'admins'],
+  [/^\/api\/admin\/(orders|payment-proofs|deliveries|invoices|notification)/i, 'orders'],
+  [/^\/api\/admin\/(media|storage)/i, 'media'],
+  [/^\/api\/admin\/(reports|export|overview|stats)/i, 'reports'],
+];
+
+function capabilityForPath(pathname: string): Capability | undefined {
+  for (const [pattern, capability] of PATH_CAPABILITIES) if (pattern.test(pathname)) return capability;
+  return undefined;
+}
+
+async function requireAdmin(request: Request, response: Response, capability?: Capability) {
   const user = await getAuthenticatedUser(request);
   if (!isAdmin(user)) {
     response.status(403).json({ error: 'forbidden', message: 'Acesso administrativo não autorizado.' });
+    return null;
+  }
+  const required = capability ?? capabilityForPath(request.originalUrl.split('?')[0]);
+  if (required && !hasCapability(user, required)) {
+    response.status(403).json({ error: 'forbidden_capability', message: 'O seu perfil não tem permissão para esta operação.' });
     return null;
   }
   return user;
@@ -100,6 +129,8 @@ async function recordAudit(userId: number, action: string, entityType: string, e
 const routeDeps = { requireDatabase, requireAdmin, recordAudit };
 registerCommunicationRoutes(app, routeDeps);
 registerAdminModuleRoutes(app, routeDeps);
+registerMediaRoutes(app, routeDeps);
+registerReviewRoutes(app, routeDeps);
 
 function parseArrayValue(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
@@ -184,7 +215,7 @@ app.get('/api/auth/me', asyncRoute(async (request, response) => {
   response.json({ user: await getAuthenticatedUser(request) });
 }));
 
-app.post('/api/auth/register', asyncRoute(async (request, response) => {
+app.post('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 12, message: 'Demasiados registos a partir deste endereço. Tente novamente mais tarde.' }), asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const { email, password, name, phone } = request.body ?? {};
   if (!validEmail(email) || typeof password !== 'string' || password.length < 6 || typeof name !== 'string' || name.trim().length < 2) {
@@ -207,7 +238,7 @@ app.post('/api/auth/register', asyncRoute(async (request, response) => {
   }
 }));
 
-app.post('/api/auth/login', asyncRoute(async (request, response) => {
+app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 15, key: (request) => String(request.body?.email ?? '').toLowerCase(), message: 'Demasiadas tentativas de início de sessão. Aguarde 15 minutos.' }), asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const { email, password } = request.body ?? {};
   if (!validEmail(email) || typeof password !== 'string') {
@@ -340,12 +371,26 @@ async function findOrder(orderNumber: string) {
 
 function chooseInvoiceTemplate(value: unknown): InvoiceTemplate { return value === 'modern' ? 'modern' : 'classic'; }
 
+function sha256(value: string): string { return createHash('sha256').update(value).digest('hex'); }
+
+/** Gera um token de acompanhamento novo e guarda apenas o respetivo hash. */
+async function issueTrackingToken(orderId: number): Promise<string> {
+  const token = randomBytes(24).toString('hex');
+  await getPool().execute(`UPDATE shop_orders SET tracking_token_hash = ?, tracking_token = NULL WHERE id = ?`, [sha256(token), orderId]);
+  return token;
+}
+
 async function canAccessOrder(request: Request, order: any): Promise<boolean> {
   const user = await getAuthenticatedUser(request);
   if (isAdmin(user)) return true;
   if (user && order.user_id && Number(order.user_id) === user.id) return true;
-  const token = String(request.query.token ?? request.body?.token ?? '');
-  if (token && order.tracking_token && token === String(order.tracking_token)) return true;
+  const token = String(request.query.token ?? request.body?.token ?? '').trim();
+  if (token) {
+    const hash = sha256(token);
+    if (order.tracking_token_hash && hash === String(order.tracking_token_hash)) return true;
+    // Compatibilidade com pedidos antigos guardados em texto simples.
+    if (order.tracking_token && token === String(order.tracking_token)) return true;
+  }
   const email = String(request.query.email ?? request.body?.email ?? '').trim().toLowerCase();
   if (email && String(order.customer_email).toLowerCase() === email) return true;
   return false;
@@ -378,9 +423,8 @@ app.put('/api/admin/payment-methods/:id', asyncRoute(async (request, response) =
   response.json({ method });
 }));
 
-app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRoute(async (request, response) => {
+app.post('/api/orders/:orderNumber/proofs', rateLimit({ windowMs: 60 * 60 * 1000, max: 12, message: 'Demasiados envios de comprovativo. Aguarde alguns minutos antes de tentar novamente.' }), proofUpload.single('file'), asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
-  if (!isStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento seguro de comprovativos ainda não está configurado.' }); return; }
   const file = request.file;
   const found = await findOrder(String(request.params.orderNumber).trim().toUpperCase());
   if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Pedido não encontrado.' }); return; }
@@ -397,11 +441,11 @@ app.post('/api/orders/:orderNumber/proofs', proofUpload.single('file'), asyncRou
   }
   const extension = safeFileExtension(file.originalname);
   if (!PROOF_EXTENSIONS.has(extension) || !PROOF_MIME_TYPES.has(file.mimetype) || !hasValidFileSignature(file)) {
-    response.status(400).json({ error: 'invalid_file', message: 'O ficheiro deve ser JPG, PNG, WEBP ou PDF válido.' }); return;
+    response.status(400).json({ error: 'invalid_file', message: 'O ficheiro deve ser JPG, PNG, WEBP ou PDF válido. Se tirou a foto com o iPhone, converta para JPG ou envie um PDF.' }); return;
   }
   const key = `payment-proofs/${found.order.order_number}/${randomUUID()}${extension === '.jpeg' ? '.jpg' : extension}`;
-  await putPrivateObject(key, file.buffer, file.mimetype);
-  await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?, 'submitted')`, [found.order.id, paymentMethodId, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size]);
+  const stored = await putMediaObject(key, file.buffer, file.mimetype, 'private');
+  await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status, storage_backend) VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?)`, [found.order.id, paymentMethodId, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size, stored.backend]);
   await getPool().execute(`UPDATE shop_orders SET payment_method = ?, payment_method_id = ?, status = 'payment_verification' WHERE id = ?`, [paymentMethodCode, paymentMethodId, found.order.id]);
   await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, 'payment_verification', 'Comprovativo enviado pelo cliente; aguarda revisão da GameAO.', NULL)`, [found.order.id, found.order.status]);
   await notifyPaymentProofSubmitted({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone, total_aoa: found.order.total_aoa, status: 'payment_verification', payment_method: paymentMethodCode, user_id: found.order.user_id });
@@ -450,13 +494,33 @@ app.patch('/api/admin/payment-proofs/:id/review', asyncRoute(async (request, res
   response.json({ ok: true, proofStatus: nextProofStatus, orderNumber: order.order_number });
 }));
 
-app.post('/api/orders', asyncRoute(async (request, response) => {
+app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 'Demasiadas tentativas de encomenda. Aguarde alguns minutos e tente novamente.' }), asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const body = request.body ?? {};
   const customer = body.customer ?? {};
   const rawItems = Array.isArray(body.items) ? body.items : [];
-  if (!rawItems.length || !validEmail(customer.email) || !customer.firstName || !customer.lastName || !customer.phone) {
+  if (!rawItems.length || !validEmail(customer.email) || !String(customer.firstName ?? '').trim() || !String(customer.lastName ?? '').trim() || String(customer.phone ?? '').replace(/\D/g, '').length < 9) {
     response.status(400).json({ error: 'invalid_order', message: 'Nome, telefone, email e produtos da encomenda são obrigatórios.' }); return;
+  }
+  const idempotencyKey = String(request.headers['idempotency-key'] ?? body.idempotencyKey ?? '').trim().slice(0, 120);
+  if (idempotencyKey) {
+    const [[cached]] = await getPool().query<any[]>(`SELECT response_json FROM idempotency_keys WHERE idempotency_key = ? AND expires_at > NOW() LIMIT 1`, [idempotencyKey]);
+    if (cached?.response_json) {
+      const payload = typeof cached.response_json === 'string' ? JSON.parse(cached.response_json) : cached.response_json;
+      response.status(200).json({ ...payload, duplicate: true });
+      return;
+    }
+    const [lock] = await getPool().execute<any>(`INSERT INTO idempotency_keys (idempotency_key, scope) VALUES (?, 'checkout') ON CONFLICT (idempotency_key) DO NOTHING`, [idempotencyKey]);
+    if (Number(lock.affectedRows ?? 0) === 0) {
+      response.status(409).json({ error: 'checkout_in_progress', message: 'A sua encomenda está a ser processada. Aguarde alguns segundos antes de tentar novamente.' });
+      return;
+    }
+    // Liberta a chave se a tentativa falhar, para permitir nova tentativa imediata.
+    response.on('finish', () => {
+      if (response.statusCode >= 400) {
+        void getPool().execute(`DELETE FROM idempotency_keys WHERE idempotency_key = ? AND response_json IS NULL`, [idempotencyKey]).catch(() => undefined);
+      }
+    });
   }
   const user = await getAuthenticatedUser(request);
   const paymentMethodCode = typeof body.paymentMethod === 'string' ? body.paymentMethod.trim() : '';
@@ -469,16 +533,25 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
   const [settingRows] = await getPool().query<any[]>(`SELECT value_json FROM site_settings WHERE setting_key = 'exchange_rate' LIMIT 1`);
   const rawSetting = settingRows[0]?.value_json;
   const setting = typeof rawSetting === 'string' ? JSON.parse(rawSetting) : rawSetting;
-  const rate = Number(setting?.usdToAoa ?? body.rate ?? 913);
+  const parsedRate = Number(setting?.usdToAoa ?? 913);
+  const rate = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 913;
   const connection = await getPool().getConnection();
   try {
     await connection.beginTransaction();
     const items: Array<{ id: string; variantId: number | null; variantName: string | null; name: string; unit: number; qty: number; subtotal: number; categoryType: string; productSubtype: string; shipping: number; playerId: string | null; playerNickname: string | null; image: string }> = [];
+    const seenProducts = new Set<string>();
     for (const raw of rawItems) {
       const productId = String(raw.productId ?? '');
+      if (!productId || seenProducts.has(productId)) continue;
+      seenProducts.add(productId);
       const qty = Math.max(1, Math.min(99, Math.floor(Number(raw.qty) || 1)));
-      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`, [productId]);
+      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url, stock_quantity, low_stock_threshold FROM catalog_products WHERE id = ? AND is_active = 1 FOR UPDATE`, [productId]);
       if (!product) continue;
+      if (product.stock_quantity !== null && product.stock_quantity !== undefined && Number(product.stock_quantity) < qty) {
+        await connection.rollback();
+        response.status(409).json({ error: 'out_of_stock', message: `Stock insuficiente para ${product.name}. Restam ${Math.max(0, Number(product.stock_quantity))} unidade(s).` });
+        return;
+      }
       const variantId = raw.variantId == null ? null : Number(raw.variantId);
       let variant: any = null;
       if (variantId) {
@@ -492,6 +565,15 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
       const playerNickname = typeof raw.playerNickname === 'string' && raw.playerNickname.trim() ? raw.playerNickname.trim().slice(0, 180) : null;
       if (requiresPlayer && !playerId) { await connection.rollback(); response.status(400).json({ error: 'player_id_required', message: `O ID do jogador é obrigatório para ${product.name}.` }); return; }
       items.push({ id: product.id, variantId: variant?.id ?? null, variantName: variant?.name ?? null, name: product.name, unit, qty, subtotal: unit * qty * rate, categoryType: product.category_type ?? 'digital', productSubtype: product.product_subtype ?? 'digital_game', shipping: product.category_type === 'physical' ? Math.max(0, Number(product.shipping_cost_aoa ?? 0)) : 0, playerId, playerNickname, image: product.image_card_url });
+      if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
+        const [stockUpdate] = await connection.execute<any>(`UPDATE catalog_products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?`, [qty, product.id, qty]);
+        if (Number(stockUpdate.affectedRows ?? 0) !== 1) {
+          await connection.rollback();
+          response.status(409).json({ error: 'out_of_stock', message: `O stock de ${product.name} esgotou durante o checkout. Tente novamente.` });
+          return;
+        }
+        await connection.execute(`INSERT INTO stock_movements (product_id, variant_id, quantity_delta, reason, note) VALUES (?, ?, ?, 'order_reserved', ?)`, [product.id, variant?.id ?? null, -qty, 'Reserva no checkout']);
+      }
     }
     if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
@@ -514,7 +596,7 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     const deliveryDate = body.deliveryDate ? String(body.deliveryDate).slice(0, 10) : null;
     const trackingToken = randomBytes(24).toString('hex');
     const deliveryAddress = [String(body.deliveryAddress ?? customer.address).trim(), String(customer.apartment ?? '').trim()].filter(Boolean).join(', ');
-    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, billing_country, billing_postal_code, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, trackingToken, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, customer.country, customer.postalCode || null, deliveryAddress, deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
+    const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token_hash, idempotency_key, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, billing_country, billing_postal_code, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, sha256(trackingToken), idempotencyKey || null, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, customer.country, customer.postalCode || null, deliveryAddress, deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
     const orderId = Number(Array.isArray(insert) ? insert[0]?.id : insert?.insertId);
     if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('A base de dados não devolveu o identificador da encomenda.');
     const orderNumber = `GA${orderId}`;
@@ -536,8 +618,7 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
     for (const item of items) {
       const [[stockRow]] = await getPool().query<any[]>(`SELECT stock_quantity, low_stock_threshold, name FROM catalog_products WHERE id = ? LIMIT 1`, [item.id]);
       if (stockRow && stockRow.stock_quantity !== null && stockRow.stock_quantity !== undefined) {
-        const remaining = Math.max(0, Number(stockRow.stock_quantity) - item.qty);
-        await getPool().execute(`UPDATE catalog_products SET stock_quantity = ? WHERE id = ?`, [remaining, item.id]);
+        const remaining = Number(stockRow.stock_quantity);
         if (remaining <= Number(stockRow.low_stock_threshold ?? 5)) void notifyLowStock({ id: item.id, name: String(stockRow.name), stock_quantity: remaining }).catch((error) => console.error('[notifications] stock', error));
       }
     }
@@ -545,7 +626,11 @@ app.post('/api/orders', asyncRoute(async (request, response) => {
       { id: orderId, order_number: orderNumber, tracking_token: trackingToken, customer_name: `${customer.firstName} ${customer.lastName}`.trim(), customer_email: customer.email.trim().toLowerCase(), customer_phone: customer.phone.trim(), total_aoa: subtotal + shipping - discount, status: 'awaiting_payment', payment_method: paymentMethod?.name ?? null, user_id: user?.id ?? null, items: items.map((item) => ({ product_name: item.name, quantity: item.qty, subtotal_aoa: item.subtotal, player_id: item.playerId, player_nickname: item.playerNickname })) },
       paymentMethod?.instructions ?? paymentMethod?.customer_message ?? '',
     ).catch((error) => console.error('[notifications] encomenda criada', error));
-    response.status(201).json({ orderNumber, trackingToken, email: customer.email.trim().toLowerCase(), totalAoa: subtotal + shipping - discount, subtotalAoa: subtotal, shippingAoa: shipping, discountAoa: discount, couponCode: coupon?.code ?? null, invoiceTemplates: ['classic', 'modern'] });
+    const payload = { orderNumber, trackingToken, email: customer.email.trim().toLowerCase(), totalAoa: subtotal + shipping - discount, subtotalAoa: subtotal, shippingAoa: shipping, discountAoa: discount, couponCode: coupon?.code ?? null, invoiceTemplates: ['classic', 'modern'] };
+    if (idempotencyKey) {
+      await getPool().execute(`UPDATE idempotency_keys SET response_json = ? WHERE idempotency_key = ?`, [JSON.stringify(payload), idempotencyKey]).catch(() => undefined);
+    }
+    response.status(201).json(payload);
   } catch (error) {
     await connection.rollback();
     console.error('[orders] falha ao criar encomenda', error instanceof Error ? error.message : error);
@@ -644,10 +729,20 @@ app.get('/api/admin/orders', asyncRoute(async (request, response) => {
 }));
 
 const ORDER_STATUSES: OrderStatus[] = ['awaiting_payment', 'payment_verification', 'payment_confirmed', 'processing', 'ready_for_delivery', 'completed', 'cancelled', 'refunded'];
+const ORDER_TRANSITIONS: Record<string, string[]> = {
+  awaiting_payment: ['payment_verification', 'payment_confirmed', 'cancelled'],
+  payment_verification: ['payment_confirmed', 'awaiting_payment', 'cancelled'],
+  payment_confirmed: ['processing', 'completed', 'cancelled', 'refunded'],
+  processing: ['ready_for_delivery', 'completed', 'cancelled', 'refunded'],
+  ready_for_delivery: ['completed', 'cancelled', 'refunded'],
+  completed: ['refunded'],
+  cancelled: [],
+  refunded: [],
+};
 
 app.patch('/api/admin/orders/:orderNumber/status', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
-  const admin = await requireAdmin(request, response);
+  const admin = await requireAdmin(request, response, 'orders');
   if (!admin) return;
   const nextStatus = String(request.body?.status ?? '') as OrderStatus;
   if (!ORDER_STATUSES.includes(nextStatus)) { response.status(400).json({ error: 'invalid_status', message: 'Estado de pedido inválido.' }); return; }
@@ -655,8 +750,24 @@ app.patch('/api/admin/orders/:orderNumber/status', asyncRoute(async (request, re
   if (!found) { response.status(404).json({ error: 'order_not_found', message: 'Encomenda não encontrada.' }); return; }
   const previousStatus = String(found.order.status);
   if (previousStatus === nextStatus) { response.json({ order: found.order, notifications: { email: 'not_sent', whatsapp: 'not_sent' } }); return; }
+  const allowed = ORDER_TRANSITIONS[previousStatus] ?? [];
+  const forcedReopen = previousStatus === 'cancelled' && nextStatus === 'awaiting_payment' && request.body?.force === true;
+  if (!allowed.includes(nextStatus) && !forcedReopen) {
+    response.status(409).json({ error: 'invalid_transition', message: `Não é possível passar de "${previousStatus}" para "${nextStatus}" sem uma ação explícita.`, allowed });
+    return;
+  }
   await getPool().execute(`UPDATE shop_orders SET status = ? WHERE id = ?`, [nextStatus, found.order.id]);
   await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, ?, ?, ?)`, [found.order.id, previousStatus, nextStatus, request.body?.note ?? null, admin.id]);
+  if (nextStatus === 'cancelled' && Number(found.order.stock_released ?? 0) === 0) {
+    for (const item of found.items as any[]) {
+      if (!item.product_id) continue;
+      const [restore] = await getPool().execute<any>(`UPDATE catalog_products SET stock_quantity = stock_quantity + ? WHERE id = ? AND stock_quantity IS NOT NULL`, [Number(item.quantity), item.product_id]);
+      if (Number(restore.affectedRows ?? 0) > 0) {
+        await getPool().execute(`INSERT INTO stock_movements (product_id, order_id, quantity_delta, reason, note, created_by_user_id) VALUES (?, ?, ?, 'order_cancelled', ?, ?)`, [item.product_id, found.order.id, Number(item.quantity), 'Stock reposto após cancelamento', admin.id]);
+      }
+    }
+    await getPool().execute(`UPDATE shop_orders SET stock_released = 1 WHERE id = ?`, [found.order.id]);
+  }
   const notifications = await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, nextStatus);
   if (['payment_confirmed', 'processing', 'ready_for_delivery', 'completed'].includes(nextStatus)) await settleAffiliateCommission(Number(found.order.id));
   await recordAudit(admin.id, 'order.status_changed', 'shop_order', String(found.order.id), { from: previousStatus, to: nextStatus, notifications });
@@ -670,25 +781,6 @@ app.get('/api/admin/products', asyncRoute(async (request, response) => {
   const user = await requireAdmin(request, response);
   if (!user) return;
   response.json({ products: await readCatalogProducts(true) });
-}));
-
-app.post('/api/admin/media', mediaUpload.single('file'), asyncRoute(async (request, response) => {
-  if (!requireDatabase(response)) return;
-  const admin = await requireAdmin(request, response);
-  if (!admin) return;
-  if (!isPublicStorageConfigured()) { response.status(503).json({ error: 'storage_not_configured', message: 'O armazenamento público R2 não está configurado.' }); return; }
-  const file = request.file;
-  const kind = String(request.body?.kind ?? 'product').replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'product';
-  if (!file || !MEDIA_MIME_TYPES.has(file.mimetype) || !hasValidMediaSignature(file)) { response.status(400).json({ error: 'invalid_file', message: 'Envie uma imagem JPG, PNG, WEBP ou GIF válida.' }); return; }
-  const extension = safeFileExtension(file.originalname) || (file.mimetype === 'image/jpeg' ? '.jpg' : file.mimetype === 'image/png' ? '.png' : file.mimetype === 'image/webp' ? '.webp' : '.gif');
-  const key = `media/${kind}/${randomUUID()}${extension}`;
-  // Media pública é enviada pelo servidor para evitar falhas de CORS ou
-  // incompatibilidades de assinatura em browsers com URLs presignadas.
-  await putObject(key, file.buffer, file.mimetype, false);
-  const url = publicObjectUrl(key) ?? await signedDownloadUrl(key, 3600, false);
-  await getPool().execute(`INSERT INTO media_library (original_name, stored_name, bucket, object_key, public_url, mime_type, size_bytes, category, purpose, visibility, uploaded_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', ?) ON CONFLICT (object_key) DO NOTHING`, [file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), key.split('/').pop(), process.env.R2_PUBLIC_BUCKET ?? process.env.R2_BUCKET ?? 'gameao-media', key, publicObjectUrl(key), file.mimetype, file.size, file.mimetype.startsWith('image/') ? 'image' : 'document', kind, admin.id]);
-  await recordAudit(admin.id, 'media.upload', 'media', key, { kind, mimeType: file.mimetype, size: file.size });
-  response.status(201).json({ key, url, public: Boolean(publicObjectUrl(key)) });
 }));
 
 app.post('/api/admin/products', asyncRoute(async (request, response) => {
@@ -816,7 +908,7 @@ app.delete('/api/admin/variants/:id', asyncRoute(async (request, response) => {
   response.status(204).end();
 }));
 
-app.post('/api/freefire/verify', asyncRoute(async (request, response) => {
+app.post('/api/freefire/verify', rateLimit({ windowMs: 60 * 60 * 1000, max: 40, message: 'Demasiadas verificações de ID. Aguarde alguns minutos.' }), asyncRoute(async (request, response) => {
   const playerId = typeof request.body?.playerId === 'string' ? request.body.playerId.trim() : '';
   if (!/^\d{5,20}$/.test(playerId)) { response.status(400).json({ error: 'invalid_player_id', message: 'Indique um ID Free Fire numérico válido.' }); return; }
   const rapidApiKey = process.env.RAPIDAPI_KEY?.trim() || process.env.FREEFIRE_VERIFY_API_KEY?.trim();
@@ -980,6 +1072,7 @@ async function serveApp(): Promise<void> {
       const indexPath = path.join(root, isProduction ? 'dist/index.html' : 'index.html');
       let html = fs.readFileSync(indexPath, 'utf8');
       if (vite) html = await vite.transformIndexHtml(request.originalUrl, html);
+      html = await injectSeo(html, request);
       response.status(200).type('html').send(html);
     } catch (error) {
       if (vite) vite.ssrFixStacktrace(error as Error);
@@ -990,6 +1083,15 @@ async function serveApp(): Promise<void> {
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     console.error('[server]', error instanceof Error ? error.message : 'Erro interno');
     if (response.headersSent) return;
+    if (error instanceof multer.MulterError) {
+      const message = error.code === 'LIMIT_FILE_SIZE'
+        ? 'O ficheiro é demasiado grande. O limite é 12 MB por ficheiro.'
+        : error.code === 'LIMIT_FILE_COUNT'
+          ? 'Envie apenas um ficheiro de cada vez.'
+          : 'Não foi possível processar o ficheiro enviado.';
+      response.status(413).json({ error: 'file_too_large', message });
+      return;
+    }
     response.status(500).json({ error: 'internal_error', message: 'Ocorreu um erro interno.' });
   });
 

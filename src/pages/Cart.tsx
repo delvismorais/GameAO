@@ -9,6 +9,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useToast } from '../context/ToastContext';
 import { formatUsdAsAoa } from '../lib/pricing';
 import { getEffectivePriceUsd } from '../data/products';
+import { useSeo } from '../lib/seo';
 
 export function Cart() {
   const { cartLines, cartSubtotalUsd, cartDiscountUsd, removeFromCart, setQty, cartCount } = useStore();
@@ -16,6 +17,7 @@ export function Cart() {
   const { showToast } = useToast();
   const totalUsd = cartSubtotalUsd - cartDiscountUsd;
 
+  useSeo({ title: 'Carrinho | GameAO', path: '/cart', noindex: true });
   return (
     <PageShell crumbs={[{ label: 'Carrinho' }]}>
       <h1 className="page-title">Carrinho</h1>

@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { STORAGE_KEYS } from '../config/store';
 import { readStorage, writeStorage } from '../lib/storage';
-import { usdToAoa } from '../lib/pricing';
 import {
   getEffectivePriceUsd,
   getProductById,
@@ -17,7 +16,6 @@ import {
   SHOP_PRODUCTS,
   type Product,
 } from '../data/products';
-import { SEED_REVIEWS, type Review } from '../data/reviews';
 
 export interface CartLine {
   productId: string;
@@ -79,13 +77,6 @@ export interface User {
   role?: string;
 }
 
-export interface BlogComment {
-  id: string;
-  postSlug: string;
-  author: string;
-  date: string;
-  text: string;
-}
 
 interface StoreContextValue {
   catalogProducts: Product[];
@@ -116,26 +107,12 @@ interface StoreContextValue {
   updateProfile: (patch: Partial<User>) => Promise<boolean>;
 
   orders: Order[];
-  placeOrder: (customer: Customer, note: string, rate: number) => Order;
 
-  reviews: Review[];
-  addReview: (productId: string, author: string, rating: number, text: string) => void;
 
-  comments: BlogComment[];
-  addComment: (postSlug: string, author: string, text: string) => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
-const SEED_COMMENTS: BlogComment[] = [
-  {
-    id: 'c-1',
-    postSlug: 'escolher-jogo-para-jogar-com-amigos',
-    author: 'Mário Kiala',
-    date: '2026-11-06',
-    text: 'Excelente guia. No nosso grupo, It Takes Two foi a melhor escolha e rendeu várias noites seguidas.',
-  },
-];
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartLine[]>(() =>
@@ -150,23 +127,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [serverProducts, setServerProducts] = useState<Product[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(CATEGORIES);
-  const [orders, setOrders] = useState<Order[]>(() =>
-    readStorage<Order[]>(STORAGE_KEYS.orders, []),
-  );
-  const [reviews, setReviews] = useState<Review[]>(() =>
-    readStorage<Review[]>(STORAGE_KEYS.reviews, SEED_REVIEWS),
-  );
-  const [comments, setComments] = useState<BlogComment[]>(() =>
-    readStorage<BlogComment[]>(STORAGE_KEYS.comments, SEED_COMMENTS),
-  );
+  // As encomendas vivem exclusivamente no servidor. O browser guarda apenas o
+  // carrinho, a lista de desejos e preferências temporárias.
+  const [orders, setOrders] = useState<Order[]>([]);
 
   useEffect(() => writeStorage(STORAGE_KEYS.cart, cart), [cart]);
   useEffect(() => writeStorage(STORAGE_KEYS.wishlist, wishlist), [wishlist]);
   useEffect(() => writeStorage(STORAGE_KEYS.compare, compare), [compare]);
   useEffect(() => writeStorage(STORAGE_KEYS.user, user), [user]);
-  useEffect(() => writeStorage(STORAGE_KEYS.orders, orders), [orders]);
-  useEffect(() => writeStorage(STORAGE_KEYS.reviews, reviews), [reviews]);
-  useEffect(() => writeStorage(STORAGE_KEYS.comments, comments), [comments]);
 
   useEffect(() => {
     let active = true;
@@ -361,66 +329,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [cart],
   );
 
-  const placeOrder = useCallback(
-    (customer: Customer, note: string, rate: number): Order => {
-      const now = new Date();
-      const sequence = orders.length + 1;
-      const order: Order = {
-        id: `GAO-${now.getFullYear()}-${String(sequence).padStart(4, '0')}`,
-        createdAt: now.toISOString(),
-        items: cartLines.map((line) => {
-          const unit = getEffectivePriceUsd(line.product);
-          return {
-            productId: line.product.id,
-            name: line.product.name,
-            image: line.product.imageCard,
-            qty: line.qty,
-            unitPriceUsd: unit,
-            unitPriceAoa: usdToAoa(unit, rate),
-            lineTotalAoa: usdToAoa(unit * line.qty, rate),
-          };
-        }),
-        subtotalAoa: usdToAoa(cartSubtotalUsd, rate),
-        discountAoa: usdToAoa(cartDiscountUsd, rate),
-        totalAoa: usdToAoa(cartTotalUsd, rate),
-        exchangeRate: rate,
-        customer,
-        note,
-        paymentMethod: 'Pagamento na entrega',
-        status: 'Pendente',
-      };
-      setOrders((current) => [order, ...current]);
-      setCart([]);
-      return order;
-    },
-    [cartLines, cartSubtotalUsd, cartDiscountUsd, cartTotalUsd, orders.length],
-  );
 
-  const addReview = useCallback(
-    (productId: string, author: string, rating: number, text: string) => {
-      const review: Review = {
-        id: `r-${Date.now()}`,
-        productId,
-        author: author.trim() || 'Cliente GameAO',
-        rating,
-        date: new Date().toISOString().slice(0, 10),
-        text: text.trim(),
-      };
-      setReviews((current) => [...current, review]);
-    },
-    [],
-  );
-
-  const addComment = useCallback((postSlug: string, author: string, text: string) => {
-    const comment: BlogComment = {
-      id: `c-${Date.now()}`,
-      postSlug,
-      author: author.trim() || 'Leitor GameAO',
-      date: new Date().toISOString().slice(0, 10),
-      text: text.trim(),
-    };
-    setComments((current) => [...current, comment]);
-  }, []);
 
   const value = useMemo<StoreContextValue>(
     () => ({
@@ -448,11 +357,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       logout,
       updateProfile,
       orders,
-      placeOrder,
-      reviews,
-      addReview,
-      comments,
-      addComment,
     }),
     [
       catalogProducts,
@@ -479,11 +383,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       logout,
       updateProfile,
       orders,
-      placeOrder,
-      reviews,
-      addReview,
-      comments,
-      addComment,
     ],
   );
 

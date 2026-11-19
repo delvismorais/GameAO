@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageShell } from '../components/layout/PageShell';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext';
 import { formatUsdAsAoa } from '../lib/pricing';
 import { getEffectivePriceUsd } from '../data/products';
 import { getStoredAffiliateCode, normalizeAffiliateCode } from '../lib/affiliate';
+import { useSeo } from '../lib/seo';
 
 const PROVINCES = ['Bengo', 'Benguela', 'Bié', 'Cabinda', 'Cuando Cubango', 'Cuanza Norte', 'Cuanza Sul', 'Cunene', 'Huambo', 'Huíla', 'Luanda', 'Lunda Norte', 'Lunda Sul', 'Malanje', 'Moxico', 'Namibe', 'Uíge', 'Zaire'];
 const COUNTRIES = ['Angola', 'Portugal', 'Brasil', 'África do Sul', 'Namíbia', 'República Democrática do Congo', 'Zâmbia'];
@@ -40,6 +41,7 @@ export function Checkout() {
   const [savedPlayerIds, setSavedPlayerIds] = useState<SavedPlayerId[]>([]);
   const [verifyingPlayer, setVerifyingPlayer] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const idempotencyKey = useRef<string>(typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   useEffect(() => { void fetch('/api/payment-methods').then((response) => response.ok ? response.json() : { methods: [] }).then((data: { methods?: PaymentMethod[] }) => { const methods = data.methods ?? []; setPaymentMethods(methods); setPaymentMethod((current) => current || methods[0]?.code || ''); }); }, []);
   useEffect(() => { try { sessionStorage.setItem('gameao-checkout-draft', JSON.stringify(customer)); } catch { /* armazenamento opcional */ } }, [customer]);
@@ -98,12 +100,13 @@ export function Checkout() {
     setSubmitting(true);
     let response: Response;
     try {
-      response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, couponCode: couponCode.trim() || undefined, affiliateCode: normalizeAffiliateCode(affiliateCode) || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty, variantId: variantSelection[product.id] ? Number(variantSelection[product.id]) : undefined, playerId: playerIds[product.id] || undefined, playerNickname: playerNames[product.id] || undefined })) }) });
+      response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey.current }, credentials: 'include', body: JSON.stringify({ rate, customer, paymentMethod: paymentMethod || undefined, couponCode: couponCode.trim() || undefined, affiliateCode: normalizeAffiliateCode(affiliateCode) || undefined, items: cartLines.map(({ product, qty }) => ({ productId: product.id, qty, variantId: variantSelection[product.id] ? Number(variantSelection[product.id]) : undefined, playerId: playerIds[product.id] || undefined, playerNickname: playerNames[product.id] || undefined })) }) });
     } catch { showToast('Não foi possível contactar o servidor. Verifique a ligação e tente novamente.', 'error'); setSubmitting(false); return; }
     if (!response.ok) { const data = await response.json().catch(() => null) as { message?: string } | null; showToast(data?.message ?? 'Não foi possível concluir o pedido.', 'error'); setSubmitting(false); return; }
-    const data = await response.json() as { orderNumber: string }; sessionStorage.removeItem('gameao-checkout-draft'); clearCart(); navigate(`/checkout/confirmacao?order=${encodeURIComponent(data.orderNumber)}&email=${encodeURIComponent(customer.email)}`);
+    const data = await response.json() as { orderNumber: string; trackingToken?: string }; sessionStorage.removeItem('gameao-checkout-draft'); clearCart(); navigate(`/checkout/confirmacao?order=${encodeURIComponent(data.orderNumber)}&email=${encodeURIComponent(customer.email)}${data.trackingToken ? `&token=${encodeURIComponent(data.trackingToken)}` : ''}`);
   };
 
+  useSeo({ title: 'Finalizar compra | GameAO', path: '/checkout', noindex: true });
   return <PageShell crumbs={[{ label: 'Carrinho', href: '/cart' }, { label: 'Finalizar Compra' }]}>
     <h1 className="page-title">Finalizar Compra</h1>
     <p className="page-subtitle">Só pedimos os dados necessários para os produtos que escolheu.</p>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Breadcrumbs } from '../components/ui/Breadcrumbs';
 import { Accordion } from '../components/ui/Accordion';
 import { FAQ_ACCORDION, FAQ_QUICK } from '../data/site';
+import { useSeo } from '../lib/seo';
 
 export function Faq() {
   const [managedFaq, setManagedFaq] = useState<Array<{ q: string; a: string }> | null>(null);
@@ -12,6 +13,11 @@ export function Faq() {
     }).catch(() => undefined);
   }, []);
   const accordion = managedFaq ?? FAQ_ACCORDION;
+  useSeo({
+    title: 'Perguntas frequentes | GameAO',
+    description: 'Pagamentos, prazos de entrega, comprovativos e garantias: tudo o que precisa de saber.',
+    path: '/faqs',
+  });
   return (
     <div className="static-page faq-page">
       <div className="container">

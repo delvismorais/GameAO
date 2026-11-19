@@ -18,6 +18,7 @@ import {
   type Product,
 } from '../../data/products';
 import { POSTS } from '../../data/posts';
+import { useSeo } from '../../lib/seo';
 
 interface ShopViewProps {
   category?: CategorySlug;
@@ -38,6 +39,12 @@ export function ShopView({ category }: ShopViewProps) {
   const [params, setParams] = useSearchParams();
   const { rate } = useSettings();
   const { catalogProducts, catalogCategories } = useStore();
+  const activeCategory = category ? catalogCategories.find((item) => item.slug === category) : undefined;
+  useSeo({
+    title: activeCategory ? `${activeCategory.name} — GameAO` : 'Loja — jogos e produtos digitais | GameAO',
+    description: activeCategory?.description ?? 'Catálogo completo GameAO: jogos para PS4, PS5, Xbox e PC, diamantes Free Fire, Robux, assinaturas e acessórios.',
+    path: category ? `/product-category/${category}` : '/shop',
+  });
   const { showToast } = useToast();
   const [filtersOpen, setFiltersOpen] = useState(false);
 

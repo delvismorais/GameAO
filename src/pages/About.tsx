@@ -1,7 +1,13 @@
 import { Breadcrumbs } from '../components/ui/Breadcrumbs';
 import { ABOUT_BLOCKS, ABOUT_FEATURES, FOUNDER_PROFILE, GAMEAO_LOGO_URL } from '../data/site';
+import { useSeo } from '../lib/seo';
 
 export function About() {
+  useSeo({
+    title: 'Sobre a GameAO — loja de videojogos em Angola',
+    description: 'Quem somos, como entregamos e porque milhares de jogadores angolanos compram na GameAO.',
+    path: '/about-us',
+  });
   return (
     <div className="static-page about-page">
       <div className="container">
