@@ -9,7 +9,8 @@ import { Icon } from '../components/ui/Icon';
 import { ProductGrid } from '../components/shop/ProductGrid';
 import { useStore } from '../context/StoreContext';
 import { useToast } from '../context/ToastContext';
-import { formatDatePt } from '../lib/pricing';
+import { useSettings } from '../context/SettingsContext';
+import { formatDatePt, formatUsdAsAoa } from '../lib/pricing';
 import { useSeo } from '../lib/seo';
 import {
   CATEGORIES,
@@ -24,6 +25,7 @@ export function Product() {
   const { catalogProducts, catalogCategories, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared } = useStore();
   const product = slug ? catalogProducts.find((item) => item.slug === slug) ?? getProductBySlug(slug) : undefined;
   const { showToast } = useToast();
+  const { rate } = useSettings();
   const seoPrice = product ? Number(product.salePriceUsd ?? product.basePriceUsd ?? 0) : 0;
   useSeo({
     title: product ? `${product.name} — GameAO` : 'Produto — GameAO',
@@ -44,6 +46,7 @@ export function Product() {
       : undefined,
   });
   const [qty, setQty] = useState(1);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [tab, setTab] = useState('description');
   const [lightbox, setLightbox] = useState(false);
   const [form, setForm] = useState({ author: '', email: '', rating: '5', text: '' });
@@ -52,8 +55,9 @@ export function Product() {
 
   useEffect(() => {
     setQty(1);
+    setSelectedVariantId(product?.variants?.[0]?.id ?? null);
     setTab('description');
-  }, [slug]);
+  }, [slug, product?.variants]);
 
   useEffect(() => {
     if (!product?.id) { setProductReviews([]); return; }
@@ -90,13 +94,16 @@ export function Product() {
 
   if (!product) return <Navigate to="/shop" replace />;
 
-  const effective = getEffectivePriceUsd(product);
+  const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId);
+  const effective = selectedVariant?.priceUsd ?? getEffectivePriceUsd(product);
   const categoryLabel = product.categoryNames?.[0] ?? catalogCategories.find((category) => category.slug === product.categories[0])?.name ?? 'Jogos';
   const categoryLink = `/product-category/${product.categories[0]}`;
 
   const handleAdd = () => {
-    addToCart(product.id, qty);
-    showToast(`${product.name} foi adicionado ao carrinho.`);
+    if ((product.isDynamic && !product.variants?.length) || (product.variants?.length && !selectedVariant)) { showToast(product.isDynamic && !product.variants?.length ? 'Este produto está temporariamente sem opções disponíveis. Contacte a equipa GameAO.' : 'Escolha uma opção disponível antes de adicionar ao carrinho.', 'error'); return; }
+    const added = addToCart(product.id, qty, selectedVariant?.id);
+    if (added) showToast(`${product.name}${selectedVariant ? ` — ${selectedVariant.name}` : ''} foi adicionado ao carrinho.`);
+    else showToast('Escolha uma opção disponível antes de adicionar ao carrinho.', 'error');
   };
 
   const handleShare = async () => {
@@ -169,7 +176,8 @@ export function Product() {
             <Rating value={product.rating} />
             <span className="product-reviews-count">({productReviews.length} {productReviews.length === 1 ? 'avaliação' : 'avaliações'})</span>
           </div>
-          <Price usd={effective} baseUsd={product.basePriceUsd} size="lg" className="product-price" />
+          <Price usd={effective} baseUsd={selectedVariant ? (selectedVariant.originalPriceUsd ?? selectedVariant.priceUsd) : product.basePriceUsd} size="lg" className="product-price" />
+          {product.variants?.length ? <div className="product-variant-picker"><label htmlFor="product-variant">Escolha a opção *</label><select id="product-variant" value={selectedVariantId ?? ''} onChange={(event) => setSelectedVariantId(Number(event.target.value) || null)}>{product.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name} — {formatUsdAsAoa(variant.priceUsd, rate)}</option>)}</select>{selectedVariant?.description && <p>{selectedVariant.description}</p>}</div> : product.isDynamic ? <div className="product-variant-picker product-variant-picker--unavailable" role="status">As opções deste produto estão temporariamente indisponíveis.</div> : null}
           <p className="product-short">{product.shortDescription}</p>
 
           <div className="product-stock">
@@ -178,7 +186,7 @@ export function Product() {
 
           <div className="product-buy">
             <Quantity value={qty} onChange={setQty} />
-            <button type="button" className="btn btn--primary btn--lg product-add" onClick={handleAdd}>
+            <button type="button" className="btn btn--primary btn--lg product-add" onClick={handleAdd} disabled={Boolean(product.isDynamic && !product.variants?.length)}>
               <Icon name="cart" /> Adicionar ao carrinho
             </button>
           </div>

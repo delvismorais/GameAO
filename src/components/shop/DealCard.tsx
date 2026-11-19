@@ -35,8 +35,8 @@ export function DealCard({ product }: { product: Product }) {
               type="button"
               className="product-action product-action--cart"
               onClick={() => {
-                addToCart(product.id);
-                showToast(`${product.name} foi adicionado ao carrinho.`);
+                const added = addToCart(product.id);
+                showToast(added ? `${product.name} foi adicionado ao carrinho.` : 'Escolha uma opção na página do produto antes de adicionar ao carrinho.', added ? 'success' : 'info');
               }}
               aria-label={`Adicionar ${product.name} ao carrinho`}
             >

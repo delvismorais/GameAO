@@ -105,8 +105,8 @@ export function Compare() {
                         type="button"
                         className="btn btn--primary btn--sm"
                         onClick={() => {
-                          addToCart(product.id);
-                          showToast(`${product.name} adicionado ao carrinho.`);
+                          const added = addToCart(product.id);
+                          showToast(added ? `${product.name} adicionado ao carrinho.` : 'Escolha uma opção na página do produto antes de adicionar ao carrinho.', added ? 'success' : 'info');
                         }}
                       >
                         <Icon name="cart" /> Adicionar

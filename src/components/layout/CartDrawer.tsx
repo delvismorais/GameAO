@@ -47,10 +47,10 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
             </div>
           ) : (
             <ul className="cart-drawer__list">
-              {cartLines.map(({ product, qty }) => {
-                const price = getEffectivePriceUsd(product);
+              {cartLines.map(({ product, qty, variant, unitPriceUsd }) => {
+                const price = unitPriceUsd;
                 return (
-                  <li key={product.id} className="cart-drawer__item">
+                  <li key={`${product.id}:${variant?.id ?? 'base'}`} className="cart-drawer__item">
                     <Link to={`/product/${product.slug}`} onClick={onClose} className="cart-drawer__thumb">
                       <img src={product.imageCard} alt={product.name} />
                     </Link>
@@ -58,14 +58,15 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
                       <Link to={`/product/${product.slug}`} onClick={onClose} className="cart-drawer__name">
                         {product.name}
                       </Link>
+                      {variant && <span className="cart-drawer__variant">{variant.name}</span>}
                       <span className="cart-drawer__price">{formatUsdAsAoa(price * qty, rate)}</span>
                       <div className="cart-drawer__actions">
-                        <Quantity value={qty} onChange={(next) => setQty(product.id, next)} compact />
+                        <Quantity value={qty} onChange={(next) => setQty(product.id, next, variant?.id)} compact />
                         <button
                           type="button"
                           className="cart-drawer__remove"
-                          onClick={() => removeFromCart(product.id)}
-                          aria-label={`Remover ${product.name}`}
+                          onClick={() => removeFromCart(product.id, variant?.id)}
+                          aria-label={`Remover ${product.name}${variant ? ` — ${variant.name}` : ''}`}
                         >
                           <Icon name="close" />
                         </button>

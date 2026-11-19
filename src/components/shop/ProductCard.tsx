@@ -25,8 +25,8 @@ export function ProductCard({ product, showCategory = false, variant = 'light' }
     : product.categoryNames?.[0] ?? catalogCategories.find((item) => item.slug === product.categories[0])?.name ?? CATEGORIES.find((item) => item.slug === product.categories[0])?.name ?? 'Jogos';
 
   const handleAdd = () => {
-    addToCart(product.id);
-    showToast(`${product.name} foi adicionado ao carrinho.`);
+    const added = addToCart(product.id);
+    showToast(added ? `${product.name} foi adicionado ao carrinho.` : 'Escolha uma opção na página do produto antes de adicionar ao carrinho.', added ? 'success' : 'info');
   };
 
   const handleWishlist = () => {

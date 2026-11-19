@@ -12,7 +12,7 @@ import { getEffectivePriceUsd } from '../data/products';
 import { useSeo } from '../lib/seo';
 
 export function Cart() {
-  const { cartLines, cartSubtotalUsd, cartDiscountUsd, removeFromCart, setQty, cartCount } = useStore();
+  const { cartLines, cartSubtotalUsd, cartDiscountUsd, removeFromCart, setQty, setVariant, cartCount } = useStore();
   const { rate } = useSettings();
   const { showToast } = useToast();
   const totalUsd = cartSubtotalUsd - cartDiscountUsd;
@@ -49,18 +49,18 @@ export function Cart() {
                   </tr>
                 </thead>
                 <tbody>
-                  {cartLines.map(({ product, qty }) => {
-                    const unit = getEffectivePriceUsd(product);
+                  {cartLines.map(({ product, qty, variant, unitPriceUsd }) => {
+                    const unit = unitPriceUsd;
                     return (
-                      <tr key={product.id}>
+                      <tr key={`${product.id}:${variant?.id ?? 'base'}`}>
                         <td className="cart-table__remove">
                           <button
                             type="button"
                             onClick={() => {
-                              removeFromCart(product.id);
+                              removeFromCart(product.id, variant?.id);
                               showToast(`${product.name} removido do carrinho.`, 'info');
                             }}
-                            aria-label={`Remover ${product.name}`}
+                            aria-label={`Remover ${product.name}${variant ? ` — ${variant.name}` : ''}`}
                           >
                             <Icon name="close" />
                           </button>
@@ -71,12 +71,12 @@ export function Cart() {
                           </Link>
                           <div>
                             <Link to={`/product/${product.slug}`} className="cart-table__name">{product.name}</Link>
-                            <span className="cart-table__meta">{product.platform}</span>
+                            <span className="cart-table__meta">{variant?.name ?? product.platform}</span>{product.variants?.length ? <select className="cart-variant-select" aria-label={`Opção de ${product.name}`} value={variant?.id ?? ''} onChange={(event) => setVariant(product.id, Number(event.target.value), variant?.id)}>{product.variants.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select> : null}
                           </div>
                         </td>
-                        <td data-label="Preço"><Price usd={unit} baseUsd={product.basePriceUsd} size="sm" /></td>
+                        <td data-label="Preço"><Price usd={unit} baseUsd={variant ? (variant.originalPriceUsd ?? unit) : product.basePriceUsd} size="sm" /></td>
                         <td data-label="Quantidade">
-                          <Quantity value={qty} onChange={(next) => setQty(product.id, next)} compact />
+                          <Quantity value={qty} onChange={(next) => setQty(product.id, next, variant?.id)} compact />
                         </td>
                         <td data-label="Subtotal"><Price usd={unit * qty} size="sm" /></td>
                       </tr>

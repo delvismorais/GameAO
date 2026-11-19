@@ -29,10 +29,12 @@ function scoreProduct(product: any, query: string): number {
 }
 
 async function publicContext(query: string): Promise<string> {
-  const [productRows] = await getPool().query<any[]>(`SELECT p.id, p.slug, p.name, p.base_price_usd, p.sale_price_usd, p.short_description, p.tags_json, STRING_AGG(c.name, ', ' ORDER BY c.sort_order, c.name) AS category_names FROM catalog_products p LEFT JOIN catalog_product_categories pc ON pc.product_id = p.id LEFT JOIN catalog_categories c ON c.id = pc.category_id WHERE p.is_active = 1 GROUP BY p.id ORDER BY p.shop_order ASC, p.name ASC LIMIT 400`);
-  const [categories] = await getPool().query<any[]>(`SELECT c.name, c.slug, c.description, COUNT(p.id) FILTER (WHERE p.is_active = 1) AS product_count FROM catalog_categories c LEFT JOIN catalog_product_categories pc ON pc.category_id = c.id LEFT JOIN catalog_products p ON p.id = pc.product_id WHERE c.is_active = 1 GROUP BY c.id ORDER BY c.sort_order ASC, c.name ASC LIMIT 100`);
-  const [posts] = await getPool().query<any[]>(`SELECT title, slug, excerpt, category, published_date FROM content_posts WHERE status = 'published' ORDER BY published_date DESC, created_at DESC LIMIT 15`);
-  const [settings] = await getPool().query<any[]>(`SELECT setting_key, value_json FROM site_settings WHERE setting_key IN ('site_config', 'faq', 'delivery_config', 'store_status', 'exchange_rate') LIMIT 5`);
+  const [[productRows], [categories], [posts], [settings]] = await Promise.all([
+    getPool().query<any[]>(`SELECT p.id, p.slug, p.name, p.base_price_usd, p.sale_price_usd, p.short_description, p.tags_json, STRING_AGG(c.name, ', ' ORDER BY c.sort_order, c.name) AS category_names FROM catalog_products p LEFT JOIN catalog_product_categories pc ON pc.product_id = p.id LEFT JOIN catalog_categories c ON c.id = pc.category_id WHERE p.is_active = 1 GROUP BY p.id ORDER BY p.shop_order ASC, p.name ASC LIMIT 400`),
+    getPool().query<any[]>(`SELECT c.name, c.slug, c.description, COUNT(p.id) FILTER (WHERE p.is_active = 1) AS product_count FROM catalog_categories c LEFT JOIN catalog_product_categories pc ON pc.category_id = c.id LEFT JOIN catalog_products p ON p.id = pc.product_id WHERE c.is_active = 1 GROUP BY c.id ORDER BY c.sort_order ASC, c.name ASC LIMIT 100`),
+    getPool().query<any[]>(`SELECT title, slug, excerpt, category, published_date FROM content_posts WHERE status = 'published' ORDER BY published_date DESC, created_at DESC LIMIT 15`),
+    getPool().query<any[]>(`SELECT setting_key, value_json FROM site_settings WHERE setting_key IN ('site_config', 'faq', 'delivery_config', 'store_status', 'exchange_rate') LIMIT 5`),
+  ]);
   const settingsByKey = Object.fromEntries(settings.map((row) => [String(row.setting_key), jsonValue(row.value_json)]));
   const site = settingsByKey.site_config ?? {};
   const exchangeRate = Number(settingsByKey.exchange_rate?.usdToAoa) > 0 ? Number(settingsByKey.exchange_rate.usdToAoa) : 913;
@@ -107,26 +109,41 @@ export function registerAssistantRoutes(app: Express, deps: RouteDeps): void {
           return;
         }
         const userMessage = safeText(latest.text, MAX_MESSAGE);
-        const context = await publicContext(userMessage);
+        const startedAt = Date.now();
+        const context = await Promise.race([publicContext(userMessage), new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error('assistant_deadline'), { name: 'TimeoutError' })), 8_000))]);
         const input = conversationInput(messages, context);
-        const upstream = await fetch('https://generativelanguage.googleapis.com/v1/interactions', {
+        const remainingMs = Math.max(0, 24_000 - (Date.now() - startedAt));
+        if (remainingMs <= 1_000) throw Object.assign(new Error('assistant_deadline'), { name: 'TimeoutError' });
+        const sendToGemini = (model: string, timeoutMs: number) => fetch('https://generativelanguage.googleapis.com/v1/interactions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify({
-            model: MODEL,
-            input,
-            system_instruction: SYSTEM_INSTRUCTION,
-            generation_config: { max_output_tokens: 700 },
-            store: false,
-          }),
-          signal: AbortSignal.timeout(22_000),
+          body: JSON.stringify({ model, input, system_instruction: SYSTEM_INSTRUCTION, generation_config: { max_output_tokens: 700 }, store: false }),
+          signal: AbortSignal.timeout(timeoutMs),
         });
+        let upstream: globalThis.Response | undefined;
+        let primaryTransientFailure = false;
+        try {
+          upstream = await sendToGemini(MODEL, Math.min(12_000, remainingMs));
+        } catch (error) {
+          primaryTransientFailure = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError' || error instanceof TypeError);
+          if (!primaryTransientFailure) throw error;
+        }
+        const remainingAfterFirstAttemptMs = Math.max(0, 24_000 - (Date.now() - startedAt));
+        if ((primaryTransientFailure || upstream?.status === 408 || upstream?.status === 429 || (upstream?.status !== undefined && upstream.status >= 500)) && remainingAfterFirstAttemptMs > 3_000) {
+          await upstream?.body?.cancel().catch(() => undefined);
+          const retryDelayMs = 1_000 + Math.floor(Math.random() * 401);
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          const fallbackTimeoutMs = Math.min(12_000, remainingAfterFirstAttemptMs - retryDelayMs - 250);
+          if (fallbackTimeoutMs >= 1_000) upstream = await sendToGemini('gemini-3.6-flash', fallbackTimeoutMs);
+        }
+        if (!upstream) throw Object.assign(new Error('assistant_upstream_unavailable'), { name: 'TimeoutError' });
         const raw = await upstream.text();
         let data: any = {};
         try { data = raw ? JSON.parse(raw) : {}; } catch { /* resposta do fornecedor inválida */ }
         if (!upstream.ok) {
           console.error('[assistant] Gemini HTTP error', upstream.status, safeText(data?.error?.status ?? data?.error?.message, 200));
-          response.status(502).json({ error: 'assistant_provider_error', message: 'Não foi possível obter uma resposta agora. Tente novamente ou contacte a equipa GameAO.' });
+          const overloaded = upstream.status === 503 || upstream.status === 429;
+          response.status(overloaded ? 503 : 502).json({ error: overloaded ? 'assistant_temporarily_busy' : 'assistant_provider_error', message: overloaded ? 'O assistente está com muita procura neste momento. Tente novamente dentro de instantes.' : 'Não foi possível obter uma resposta agora. Tente novamente ou contacte a equipa GameAO.' });
           return;
         }
         const answer = (Array.isArray(data.steps) ? data.steps : [])
@@ -143,12 +160,13 @@ export function registerAssistantRoutes(app: Express, deps: RouteDeps): void {
         }
         response.json({ answer });
       } catch (error) {
-        const timedOut = error instanceof Error && error.name === 'TimeoutError';
+        const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
         if (timedOut) {
           response.status(504).json({ error: 'assistant_timeout', message: 'A resposta está a demorar. Tente novamente em instantes.' });
           return;
         }
-        next(error);
+        console.error('[assistant] request failed', error instanceof Error ? error.message.slice(0, 200) : 'unknown');
+        response.status(502).json({ error: 'assistant_provider_error', message: 'Não foi possível obter uma resposta agora. Tente novamente ou contacte a equipa GameAO.' });
       }
     })();
   });

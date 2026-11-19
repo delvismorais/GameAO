@@ -40,6 +40,7 @@ export interface InvoiceOrder {
 
 export interface InvoiceItem {
   name: string;
+  variantName?: string | null;
   imageUrl?: string | null;
   unitPriceAoa: number;
   quantity: number;
@@ -135,7 +136,7 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
     document.save();
     document.moveTo(left, footerY - 7).lineTo(right, footerY - 7).lineWidth(0.6).stroke(light);
     document.fillColor(grey).font('Helvetica').fontSize(7.5)
-      .text(`${site.name} · ${site.website || 'gameao.shop'} · ${site.email} · ${site.phone} · ${site.location}`, left, footerY, { width: width - 65, lineBreak: false, ellipsis: true })
+      .text(`${site.name} · ${site.website || 'gameao.shop'} · ${site.email} · ${site.phone} · ${site.location}`.replace(/\s+/g, ' ').slice(0, 125), left, footerY, { width: width - 65, lineBreak: false, ellipsis: true })
       .text(`Página ${pageNumber}`, right - 60, footerY, { width: 60, align: 'right', lineBreak: false });
     document.restore();
   };
@@ -159,11 +160,13 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
     drawTableHeader();
   };
 
-  const drawInfoCard = (x: number, top: number, cardWidth: number, title: string, lines: string[]): number => {
+  const infoCardHeight = (cardWidth: number, lines: string[]): number => {
     const content = lines.filter(Boolean).join('\n');
     document.font('Helvetica').fontSize(8.5);
-    const textHeight = Math.max(18, document.heightOfString(content || '—', { width: cardWidth - 24, lineGap: 2 }));
-    const cardHeight = textHeight + 39;
+    return Math.max(18, document.heightOfString(content || '—', { width: cardWidth - 24, lineGap: 2 })) + 39;
+  };
+  const drawInfoCard = (x: number, top: number, cardWidth: number, title: string, lines: string[], cardHeight: number): number => {
+    const content = lines.filter(Boolean).join('\n');
     document.roundedRect(x, top, cardWidth, cardHeight, 4).fillAndStroke('#f8f9fb', light);
     document.fillColor(orange).font('Helvetica-Bold').fontSize(8).text(title.toUpperCase(), x + 12, top + 11, { width: cardWidth - 24 });
     document.fillColor(navy).font('Helvetica').fontSize(8.5).text(content || '—', x + 12, top + 25, { width: cardWidth - 24, lineGap: 2 });
@@ -177,10 +180,10 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
   const customerAddress = [order.billingAddress, order.billingCity, order.billingProvince].filter(Boolean).join(', ');
   const storeLines = [site.name, site.legalName ? `Entidade empresarial: ${site.legalName}` : '', site.nif ? `NIF: ${site.nif}` : '', site.website ? `Website: ${site.website}` : '', site.email, site.phone ? `Telefone: ${site.phone}` : '', site.whatsapp ? `WhatsApp: ${site.whatsapp}` : '', site.location];
   const customerLines = [order.customerName, order.customerEmail, order.customerPhone ? `Telefone: ${order.customerPhone}` : '', customerAddress ? `Morada: ${customerAddress}` : ''];
-  const cardHeight = Math.max(
-    drawInfoCard(left, y, cardWidth, 'Dados da loja', storeLines),
-    drawInfoCard(left + cardWidth + cardGap, y, cardWidth, 'Faturado a', customerLines),
-  );
+  const cardHeight = Math.max(infoCardHeight(cardWidth, storeLines), infoCardHeight(cardWidth, customerLines));
+  if (y + cardHeight > contentBottom - 100) { drawFooter(); document.addPage({ size: 'A4', margin: 0 }); pageNumber += 1; drawBrand(false); y = 87; }
+  drawInfoCard(left, y, cardWidth, 'Dados da loja', storeLines, cardHeight);
+  drawInfoCard(left + cardWidth + cardGap, y, cardWidth, 'Faturado a', customerLines, cardHeight);
   y += cardHeight + 14;
 
   const details = [
@@ -198,7 +201,7 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
     const image = localPublicImage(item.imageUrl, root);
     const productX = image ? left + 52 : left + 10;
     const productWidth = image ? 234 : 276;
-    let itemName = String(item.name || 'Produto').replace(/\s+/g, ' ').trim().slice(0, 600);
+    let itemName = [String(item.name || 'Produto'), item.variantName ? `Opção: ${item.variantName}` : ''].filter(Boolean).join(' · ').replace(/\s+/g, ' ').trim().slice(0, 800);
     document.fillColor(navy).font('Helvetica').fontSize(8.6);
     const maxNameHeight = contentBottom - 112 - 20;
     let nameHeight = document.heightOfString(itemName, { width: productWidth, lineGap: 2 });

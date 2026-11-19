@@ -503,7 +503,7 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
   const body = request.body ?? {};
   const customer = body.customer ?? {};
   const rawItems = Array.isArray(body.items) ? body.items : [];
-  if (!rawItems.length || !validEmail(customer.email) || !String(customer.firstName ?? '').trim() || !String(customer.lastName ?? '').trim() || String(customer.phone ?? '').replace(/\D/g, '').length < 9) {
+  if (!rawItems.length || rawItems.length > 50 || !validEmail(customer.email) || !String(customer.firstName ?? '').trim() || !String(customer.lastName ?? '').trim() || String(customer.phone ?? '').replace(/\D/g, '').length < 9) {
     response.status(400).json({ error: 'invalid_order', message: 'Nome, telefone, email e produtos da encomenda são obrigatórios.' }); return;
   }
   const idempotencyKey = String(request.headers['idempotency-key'] ?? body.idempotencyKey ?? '').trim().slice(0, 120);
@@ -543,22 +543,29 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
   try {
     await connection.beginTransaction();
     const items: Array<{ id: string; variantId: number | null; variantName: string | null; name: string; unit: number; qty: number; subtotal: number; categoryType: string; productSubtype: string; shipping: number; playerId: string | null; playerNickname: string | null; image: string }> = [];
+    const stockRequirements = new Map<string, { quantity: number; name: string }>();
     const seenProducts = new Set<string>();
     for (const raw of rawItems) {
       const productId = String(raw.productId ?? '');
-      if (!productId || seenProducts.has(productId)) continue;
-      seenProducts.add(productId);
-      const qty = Math.max(1, Math.min(99, Math.floor(Number(raw.qty) || 1)));
-      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url, stock_quantity, low_stock_threshold FROM catalog_products WHERE id = ? AND is_active = 1 FOR UPDATE`, [productId]);
-      if (!product) continue;
+      const lineKey = `${productId}:${raw.variantId ?? 'base'}`;
+      if (!productId || seenProducts.has(lineKey)) { await connection.rollback(); response.status(400).json({ error: 'invalid_order_item', message: 'O carrinho contém um produto repetido ou inválido. Atualize o carrinho e tente novamente.' }); return; }
+      seenProducts.add(lineKey);
+      const qty = Number(raw.qty);
+      if (!Number.isInteger(qty) || qty < 1 || qty > 99) { await connection.rollback(); response.status(400).json({ error: 'invalid_quantity', message: 'A quantidade de um dos produtos é inválida.' }); return; }
+      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url, stock_quantity, low_stock_threshold, is_dynamic FROM catalog_products WHERE id = ? AND is_active = 1 FOR UPDATE`, [productId]);
+      if (!product) { await connection.rollback(); response.status(400).json({ error: 'product_unavailable', message: 'Um dos produtos já não está disponível. Atualize o carrinho.' }); return; }
       if (product.stock_quantity !== null && product.stock_quantity !== undefined && Number(product.stock_quantity) < qty) {
         await connection.rollback();
         response.status(409).json({ error: 'out_of_stock', message: `Stock insuficiente para ${product.name}. Restam ${Math.max(0, Number(product.stock_quantity))} unidade(s).` });
         return;
       }
-      const variantId = raw.variantId == null ? null : Number(raw.variantId);
+      const variantId = raw.variantId == null || raw.variantId === '' ? null : Number(raw.variantId);
+      if (variantId !== null && (!Number.isInteger(variantId) || variantId <= 0)) { await connection.rollback(); response.status(400).json({ error: 'invalid_variant', message: 'A opção selecionada não é válida.' }); return; }
+      const [[variantCountRow]] = await connection.query<any[]>(`SELECT COUNT(*)::int AS total FROM product_variants WHERE product_id = ? AND is_active = 1`, [product.id]);
+      const hasVariants = Number(variantCountRow?.total ?? 0) > 0;
+      if ((Boolean(product.is_dynamic) || hasVariants) && !variantId) { await connection.rollback(); response.status(400).json({ error: 'variant_required', message: `Escolha uma opção disponível para ${product.name}.` }); return; }
       let variant: any = null;
-      if (variantId) {
+      if (variantId !== null) {
         const [[foundVariant]] = await connection.query<any[]>(`SELECT id, name, price_usd FROM product_variants WHERE id = ? AND product_id = ? AND is_active = 1 LIMIT 1`, [variantId, product.id]);
         variant = foundVariant;
         if (!variant) { await connection.rollback(); response.status(400).json({ error: 'invalid_variant', message: 'A variante selecionada já não está disponível.' }); return; }
@@ -570,15 +577,11 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
       if (requiresPlayer && !playerId) { await connection.rollback(); response.status(400).json({ error: 'player_id_required', message: `O ID do jogador é obrigatório para ${product.name}.` }); return; }
       items.push({ id: product.id, variantId: variant?.id ?? null, variantName: variant?.name ?? null, name: product.name, unit, qty, subtotal: unit * qty * rate, categoryType: product.category_type ?? 'digital', productSubtype: product.product_subtype ?? 'digital_game', shipping: product.category_type === 'physical' ? Math.max(0, Number(product.shipping_cost_aoa ?? 0)) : 0, playerId, playerNickname, image: product.image_card_url });
       if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
-        const [stockUpdate] = await connection.execute<any>(`UPDATE catalog_products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?`, [qty, product.id, qty]);
-        if (Number(stockUpdate.affectedRows ?? 0) !== 1) {
-          await connection.rollback();
-          response.status(409).json({ error: 'out_of_stock', message: `O stock de ${product.name} esgotou durante o checkout. Tente novamente.` });
-          return;
-        }
-        await connection.execute(`INSERT INTO stock_movements (product_id, variant_id, quantity_delta, reason, note) VALUES (?, ?, ?, 'order_reserved', ?)`, [product.id, variant?.id ?? null, -qty, 'Reserva no checkout']);
+        const prior = stockRequirements.get(String(product.id));
+        stockRequirements.set(String(product.id), { quantity: (prior?.quantity ?? 0) + qty, name: String(product.name) });
       }
     }
+    if (items.length !== rawItems.length) { await connection.rollback(); response.status(400).json({ error: 'incomplete_order', message: 'Não foi possível validar todos os produtos do carrinho.' }); return; }
     if (!items.length) { await connection.rollback(); response.status(400).json({ error: 'empty_order', message: 'Nenhum produto válido foi encontrado.' }); return; }
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
     const shipping = items.reduce((sum, item) => sum + item.shipping, 0);
@@ -598,6 +601,17 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
     const hasPhysical = items.some((item) => item.categoryType === 'physical');
     if (hasPhysical && (!String(body.deliveryAddress ?? customer.address).trim() || !String(customer.city ?? '').trim() || !String(customer.province ?? '').trim())) { await connection.rollback(); response.status(400).json({ error: 'delivery_address_required', message: 'Produtos físicos exigem um endereço de entrega completo.' }); return; }
     const deliveryDate = body.deliveryDate ? String(body.deliveryDate).slice(0, 10) : null;
+    for (const [productId, requirement] of stockRequirements) {
+      const [stockUpdate] = await connection.execute<any>(`UPDATE catalog_products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?`, [requirement.quantity, productId, requirement.quantity]);
+      if (Number(stockUpdate.affectedRows ?? 0) !== 1) {
+        await connection.rollback();
+        response.status(409).json({ error: 'out_of_stock', message: `O stock de ${requirement.name} es insuficiente para as quantidades selecionadas. Atualize o carrinho e tente novamente.` });
+        return;
+      }
+      for (const item of items.filter((line) => line.id === productId)) {
+        await connection.execute(`INSERT INTO stock_movements (product_id, variant_id, quantity_delta, reason, note) VALUES (?, ?, ?, 'order_reserved', ?)`, [productId, item.variantId, -item.qty, 'Reserva no checkout']);
+      }
+    }
     const trackingToken = randomBytes(24).toString('hex');
     const deliveryAddress = [String(body.deliveryAddress ?? customer.address).trim(), String(customer.apartment ?? '').trim()].filter(Boolean).join(', ');
     const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token_hash, idempotency_key, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, billing_country, billing_postal_code, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, sha256(trackingToken), idempotencyKey || null, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, customer.country, customer.postalCode || null, deliveryAddress, deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
@@ -692,7 +706,7 @@ async function deliverInvoice(request: Request, response: Response, adminOnly: b
   }
   const template = chooseInvoiceTemplate(request.query.template);
   const site = await getSiteConfig();
-  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, deliveryAddress: found.order.delivery_address, deliveryDate: found.order.delivery_date, shippingAoa: Number(found.order.shipping_aoa ?? 0), paymentMethod: found.order.payment_method, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status, site }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
+  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, deliveryAddress: found.order.delivery_address, deliveryDate: found.order.delivery_date, shippingAoa: Number(found.order.shipping_aoa ?? 0), paymentMethod: found.order.payment_method, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status, site }, found.items.map((item: any) => ({ name: item.product_name, variantName: item.variant_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
   await getPool().execute(`INSERT INTO invoice_downloads (order_id, template, downloaded_by_user_id) VALUES (?, ?, ?)`, [found.order.id, template, admin?.id ?? null]);
   response.setHeader('Content-Type', 'application/pdf');
   response.setHeader('Content-Disposition', `attachment; filename="fatura-${found.order.order_number}-${template}.pdf"`);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-type ChatMessage = { role: 'user' | 'assistant'; text: string };
+type ChatMessage = { role: 'user' | 'assistant'; text: string; failed?: boolean };
 const WELCOME: ChatMessage = {
   role: 'assistant',
   text: 'Olá! Sou o assistente GameAO. Posso ajudar com produtos, categorias, informações da loja e novidades públicas do site. Para consultar uma encomenda, use Acompanhar pedido com o email associado ou o seu token seguro.',
@@ -25,7 +25,7 @@ export function AssistantWidget() {
     event.preventDefault();
     const text = draft.trim();
     if (!text || sending) return;
-    const nextMessages: ChatMessage[] = [...messages, { role: 'user', text }];
+    const nextMessages: ChatMessage[] = [...messages.filter((message) => !message.failed), { role: 'user', text }];
     setMessages(nextMessages);
     setDraft('');
     setSending(true);
@@ -39,8 +39,7 @@ export function AssistantWidget() {
       if (!response.ok) throw new Error(typeof data.message === 'string' ? data.message : 'O assistente está temporariamente indisponível. Tente novamente mais tarde.');
       setMessages((current) => [...current, { role: 'assistant', text: String(data.answer ?? 'Não consegui preparar uma resposta. Tente novamente.') }]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Não foi possível contactar o assistente. Tente novamente.';
-      setMessages((current) => [...current, { role: 'assistant', text: message }]);
+      setMessages((current) => [...current, { role: 'assistant', text: 'Não foi possível responder agora. Tente novamente dentro de instantes.', failed: true }]);
     } finally {
       setSending(false);
     }

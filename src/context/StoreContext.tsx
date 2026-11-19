@@ -20,6 +20,7 @@ import {
 export interface CartLine {
   productId: string;
   qty: number;
+  variantId?: number;
 }
 
 export interface Customer {
@@ -83,12 +84,13 @@ interface StoreContextValue {
   catalogCategories: CatalogCategory[];
   cart: CartLine[];
   cartCount: number;
-  cartLines: { product: Product; qty: number }[];
+  cartLines: { product: Product; qty: number; variant: NonNullable<Product['variants']>[number] | undefined; unitPriceUsd: number }[];
   cartSubtotalUsd: number;
   cartDiscountUsd: number;
-  addToCart: (productId: string, qty?: number) => void;
-  removeFromCart: (productId: string) => void;
-  setQty: (productId: string, qty: number) => void;
+  addToCart: (productId: string, qty?: number, variantId?: number) => boolean;
+  removeFromCart: (productId: string, variantId?: number) => void;
+  setQty: (productId: string, qty: number, variantId?: number) => void;
+  setVariant: (productId: string, variantId: number, previousVariantId?: number) => void;
   clearCart: () => void;
 
   wishlist: string[];
@@ -159,6 +161,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!serverProducts.length) return;
+    setCart((current) => {
+      let changed = false;
+      const next = current.map((line) => {
+        if (line.variantId) return line;
+        const first = serverProducts.find((product) => product.id === line.productId)?.variants?.[0];
+        if (!first) return line;
+        changed = true;
+        return { ...line, variantId: first.id };
+      });
+      return changed ? next : current;
+    });
+  }, [serverProducts]);
+  useEffect(() => {
     let active = true;
     fetch('/api/catalog/categories')
       .then((response) => response.ok ? response.json() : { categories: [] })
@@ -179,31 +195,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [user]);
 
-  const addToCart = useCallback((productId: string, qty = 1) => {
+  const addToCart = useCallback((productId: string, qty = 1, requestedVariantId?: number): boolean => {
+    const product = serverProducts.find((item) => item.id === productId) ?? getProductById(productId);
+    if (!product) return false;
+    const hasVariants = Boolean(product.isDynamic || product.variants?.length);
+    if (hasVariants && (!requestedVariantId || !product.variants?.some((variant) => variant.id === requestedVariantId))) return false;
+    const variantId = requestedVariantId;
     setCart((current) => {
-      const existing = current.find((line) => line.productId === productId);
-      if (existing) {
-        return current.map((line) =>
-          line.productId === productId
-            ? { ...line, qty: Math.min(99, line.qty + qty) }
-            : line,
-        );
-      }
-      return [...current, { productId, qty: Math.max(1, qty) }];
+      const existing = current.find((line) => line.productId === productId && line.variantId === variantId);
+      if (existing) return current.map((line) => line === existing ? { ...line, qty: Math.min(99, line.qty + qty) } : line);
+      return [...current, { productId, ...(variantId ? { variantId } : {}), qty: Math.max(1, Math.min(99, qty)) }];
     });
-  }, []);
-
-  const removeFromCart = useCallback((productId: string) => {
-    setCart((current) => current.filter((line) => line.productId !== productId));
-  }, []);
-
-  const setQty = useCallback((productId: string, qty: number) => {
+    return true;
+  }, [serverProducts]);
+  const removeFromCart = useCallback((productId: string, variantId?: number) => setCart((current) => current.filter((line) => line.productId !== productId || line.variantId !== variantId)), []);
+  const setQty = useCallback((productId: string, qty: number, variantId?: number) => {
     const safe = Math.max(1, Math.min(99, Math.floor(qty) || 1));
-    setCart((current) =>
-      current.map((line) => (line.productId === productId ? { ...line, qty: safe } : line)),
-    );
+    setCart((current) => current.map((line) => line.productId === productId && line.variantId === variantId ? { ...line, qty: safe } : line));
   }, []);
-
+  const setVariant = useCallback((productId: string, variantId: number, previousVariantId?: number) => setCart((current) => {
+    const source = current.find((line) => line.productId === productId && line.variantId === previousVariantId);
+    if (!source || source.variantId === variantId) return current;
+    const remaining = current.filter((line) => line !== source);
+    const target = remaining.find((line) => line.productId === productId && line.variantId === variantId);
+    return target ? remaining.map((line) => line === target ? { ...line, qty: Math.min(99, line.qty + source.qty) } : line) : [...remaining, { ...source, variantId }];
+  }), []);
   const clearCart = useCallback(() => setCart([]), []);
 
   const toggleWishlist = useCallback((productId: string) => {
@@ -292,9 +308,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cart
         .map((line) => {
           const product = serverProducts.find((item) => item.id === line.productId) ?? getProductById(line.productId);
-          return product ? { product, qty: line.qty } : null;
+          if (!product) return null;
+          const variant = product.variants?.find((item) => item.id === line.variantId);
+          return { product, qty: line.qty, variant, unitPriceUsd: variant?.priceUsd ?? getEffectivePriceUsd(product) };
         })
-        .filter((line): line is { product: Product; qty: number } => line !== null),
+        .filter((line): line is { product: Product; qty: number; variant: Product['variants'] extends (infer V)[] | undefined ? V | undefined : undefined; unitPriceUsd: number } => line !== null),
     [cart, serverProducts],
   );
 
@@ -306,7 +324,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const cartSubtotalUsd = useMemo(
     () =>
       cartLines.reduce(
-        (total, line) => total + line.product.basePriceUsd * line.qty,
+        (total, line) => total + (line.variant?.originalPriceUsd ?? line.unitPriceUsd) * line.qty,
         0,
       ),
     [cartLines],
@@ -315,9 +333,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const cartDiscountUsd = useMemo(
     () =>
       cartLines.reduce((total, line) => {
-        const base = line.product.basePriceUsd;
-        const effective = getEffectivePriceUsd(line.product);
-        return total + Math.max(0, base - effective) * line.qty;
+        const base = line.variant ? (line.variant.originalPriceUsd ?? line.unitPriceUsd) : line.product.basePriceUsd;
+        return total + Math.max(0, base - line.unitPriceUsd) * line.qty;
       }, 0),
     [cartLines],
   );
@@ -343,6 +360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart,
       removeFromCart,
       setQty,
+      setVariant,
       clearCart,
       wishlist,
       toggleWishlist,
@@ -369,6 +387,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart,
       removeFromCart,
       setQty,
+      setVariant,
       clearCart,
       wishlist,
       toggleWishlist,
