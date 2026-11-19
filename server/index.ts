@@ -26,6 +26,7 @@ import { getPrivateObjectUrl, putMediaObject } from './storage';
 import { registerCommunicationRoutes } from './routes/communication';
 import { registerAdminModuleRoutes } from './routes/admin-modules';
 import { registerReviewRoutes } from './routes/reviews';
+import { registerAssistantRoutes } from './routes/assistant';
 import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } from './affiliates';
 import { hasCapability, rateLimit, sameOriginGuard, securityHeaders, type Capability } from './security';
 import { registerMediaRoutes } from './media';
@@ -133,6 +134,7 @@ registerCommunicationRoutes(app, routeDeps);
 registerAdminModuleRoutes(app, routeDeps);
 registerMediaRoutes(app, routeDeps);
 registerReviewRoutes(app, routeDeps);
+registerAssistantRoutes(app, routeDeps);
 
 function parseArrayValue(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);

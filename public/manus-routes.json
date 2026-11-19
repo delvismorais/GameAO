@@ -8,6 +8,7 @@
     { "path": "/product-category/playstation", "title": "PlayStation" },
     { "path": "/product-category/pc", "title": "PC" },
     { "path": "/product-category/featured", "title": "Destaques" },
+    { "path": "/product-category/:slug", "title": "Categoria" },
     { "path": "/product/:slug", "title": "Produto" },
     { "path": "/cart", "title": "Carrinho" },
     { "path": "/checkout", "title": "Finalizar Compra" },

@@ -171,3 +171,16 @@
 - [x] Ao enviar comprovativo, depois de arquivo e estado serem persistidos, a interface deve mostrar confirmação sem aguardar SMS/email nem atualização secundária, e falhas de notificação não podem transformar uma submissão já guardada em erro aparente que incentive reenvio.
 - [x] As duas faturas PDF devem mostrar cabeçalho e contactos atuais da GameAO, dados do cliente, itens e valores legíveis, totais corretos, quebras de página sem sobreposições/cortes e rodapé dentro da página; nenhuma imagem remota ou caminho arbitrário deve ser embutido no PDF.
 - [x] Validar com testes locais/fixtures sem mensagem real, sem encomenda/comprovativo real e sem operações de escrita na base de produção; executar typecheck/build e inspecionar os PDFs gerados localmente.
+
+
+## 22. Email responsivo, filtros de categorias, assistente virtual e faturas — novembro de 2026
+
+- [x] Os emails automáticos e manuais devem usar o mesmo layout responsivo, manter o logo, slogan, contactos e assinatura, apresentar imagens com URL HTTPS absoluta, texto alternativo e links funcionais para a loja/conteúdo; o texto e o CTA devem continuar utilizáveis se o cliente bloquear imagens remotas. Não afirmar que o remetente pode obrigar Gmail/Outlook ou outro cliente a mostrar imagens externas bloqueadas.
+- [x] As páginas e filtros de categoria devem aceitar slugs dinâmicos do catálogo, incluindo `/product-category/free-fire`, e apresentar os produtos associados sem redirecionar indevidamente para `/shop`.
+- [x] O acompanhamento de pedidos permanece protegido: o utilizador confirmou manter a verificação pelo email da compra ou token seguro; não implementar consulta somente pelo número nem ampliar a resposta pública.
+- [x] Criar assistente virtual global, visível nas páginas do site e minimizado por omissão no canto inferior direito; a caixa de diálogo deve ser acessível, adaptável a desktop e mobile, caber no viewport e não impedir o uso da página.
+- [x] O assistente deve responder em português com informação pública atual do catálogo, categorias, FAQ, artigos publicados e configurações da loja; o contexto é lido no servidor a cada pedido, sem usar dados pessoais, encomendas, comprovativos ou instruções de conteúdo publicado como comandos confiáveis.
+- [ ] A integração Gemini deve ocorrer somente no backend através de variável privada no Render, com limites de entrada/saída, timeout e rate limit; nenhuma chave pode ser enviada ao navegador, incluída em `VITE_*`, commitada ou exibida em logs. A ativação real depende da configuração segura de `GEMINI_API_KEY`.
+- [x] As duas faturas devem manter a marca GameAO e incluir o nome empresarial **MORÁSIO DIGITAL**, NIF **5002678500** e o domínio **gameao.shop**, sem remover nem ocultar a GameAO.
+- [x] O número do pedido deve ser mostrado no cabeçalho da fatura no mesmo tamanho tipográfico de **FATURA**, mantendo alinhamento e sem colisões nos templates clássico e moderno.
+- [x] Validar por build, testes de renderização e fixture PDF local, sem criar encomendas, sem submeter comprovativos reais e sem enviar emails/SMS de teste.

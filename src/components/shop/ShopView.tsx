@@ -21,7 +21,7 @@ import { POSTS } from '../../data/posts';
 import { useSeo } from '../../lib/seo';
 
 interface ShopViewProps {
-  category?: CategorySlug;
+  category?: string;
 }
 
 const SORT_OPTIONS = [
@@ -49,7 +49,7 @@ export function ShopView({ category }: ShopViewProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const availableCategories = catalogCategories.length ? catalogCategories : CATEGORIES;
-  const categoryInfo = category ? availableCategories.find((item) => item.slug === category) ?? getCategoryBySlug(category) : undefined;
+  const categoryInfo = category ? availableCategories.find((item) => item.slug === category) ?? getCategoryBySlug(category as CategorySlug) : undefined;
   const pageTitle = categoryInfo?.name ?? 'Loja';
 
   const q = params.get('q') ?? '';
@@ -86,7 +86,7 @@ export function ShopView({ category }: ShopViewProps) {
   const filtered = useMemo(() => {
     let list: Product[] = [...catalogProducts];
 
-    if (category) list = list.filter((product) => product.categories.includes(category));
+    if (category) list = list.filter((product) => product.categories.some((slug) => slug === category));
     if (catParam) list = list.filter((product) => product.categories.includes(catParam as CategorySlug));
 
     if (q.trim()) {

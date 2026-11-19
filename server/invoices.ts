@@ -11,6 +11,9 @@ export interface InvoiceSite {
   whatsapp: string;
   location: string;
   tagline?: string;
+  legalName?: string;
+  nif?: string;
+  website?: string;
 }
 
 export interface InvoiceOrder {
@@ -51,6 +54,7 @@ const white = '#ffffff';
 const defaultSite: InvoiceSite = {
   name: 'GameAO', email: 'geral@gameao.shop', phone: '973 929 712',
   whatsapp: '244973929712', location: 'Luanda, Angola', tagline: 'A sua loja de videojogos em Angola.',
+  legalName: 'MORÁSIO DIGITAL', nif: '5002678500', website: 'gameao.shop',
 };
 
 function money(value: number): string {
@@ -82,7 +86,7 @@ function localPublicImage(imageUrl: string | null | undefined, root: string): st
 }
 
 export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[], template: InvoiceTemplate, root: string): Promise<Buffer> {
-  const document = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `Fatura ${order.orderNumber}`, Author: 'GameAO', Subject: `Fatura da encomenda ${order.orderNumber}` } });
+  const document = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `Fatura ${order.orderNumber}`, Author: 'GameAO — MORÁSIO DIGITAL', Subject: `Fatura da encomenda ${order.orderNumber}` } });
   const chunks: Buffer[] = [];
   document.on('data', (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve, reject) => {
@@ -110,7 +114,7 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
       else document.fillColor(white).font('Helvetica-Bold').fontSize(26).text(site.name, left, 32, { width: 250 });
       document.fillColor('#d4dbe2').font('Helvetica').fontSize(8.5).text((site.tagline || 'Loja de videojogos em Angola').toUpperCase(), left, 76, { width: 300 });
       document.fillColor(white).font('Helvetica-Bold').fontSize(20).text('FATURA', right - 160, 29, { width: 160, align: 'right' });
-      document.font('Helvetica').fontSize(9).text(order.orderNumber, right - 160, 58, { width: 160, align: 'right' });
+      document.font('Helvetica-Bold').fontSize(20).text(order.orderNumber, right - 160, 56, { width: 160, align: 'right', lineBreak: false });
       document.fillColor(navy);
     } else {
       if (firstPage) {
@@ -118,11 +122,11 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
         else document.fillColor(navy).font('Helvetica-Bold').fontSize(26).text(site.name, left, 30, { width: 250 });
         document.fillColor(grey).font('Helvetica').fontSize(8.5).text(site.tagline || 'Loja de videojogos em Angola', left, 78, { width: 310 });
         document.fillColor(navy).font('Helvetica-Bold').fontSize(20).text('FATURA', right - 160, 28, { width: 160, align: 'right' });
-        document.font('Helvetica').fontSize(9).text(order.orderNumber, right - 160, 58, { width: 160, align: 'right' });
+        document.font('Helvetica-Bold').fontSize(20).text(order.orderNumber, right - 160, 55, { width: 160, align: 'right', lineBreak: false });
       } else {
         document.rect(0, 0, pageWidth, 7).fill(template === 'modern' ? orange : navy);
         document.fillColor(navy).font('Helvetica-Bold').fontSize(11).text(site.name, left, 22, { width: 240 });
-        document.fillColor(grey).font('Helvetica').fontSize(9).text(`FATURA · ${order.orderNumber}`, right - 230, 22, { width: 230, align: 'right' });
+        document.fillColor(grey).font('Helvetica-Bold').fontSize(11).text(`FATURA · ${order.orderNumber}`, right - 230, 22, { width: 230, align: 'right', lineBreak: false });
       }
     }
   };
@@ -131,7 +135,7 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
     document.save();
     document.moveTo(left, footerY - 7).lineTo(right, footerY - 7).lineWidth(0.6).stroke(light);
     document.fillColor(grey).font('Helvetica').fontSize(7.5)
-      .text(`${site.name} · ${site.email} · ${site.phone} · ${site.location}`, left, footerY, { width: width - 65, lineBreak: false, ellipsis: true })
+      .text(`${site.name} · ${site.website || 'gameao.shop'} · ${site.email} · ${site.phone} · ${site.location}`, left, footerY, { width: width - 65, lineBreak: false, ellipsis: true })
       .text(`Página ${pageNumber}`, right - 60, footerY, { width: 60, align: 'right', lineBreak: false });
     document.restore();
   };
@@ -171,7 +175,7 @@ export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[]
   const cardGap = 14;
   const cardWidth = (width - cardGap) / 2;
   const customerAddress = [order.billingAddress, order.billingCity, order.billingProvince].filter(Boolean).join(', ');
-  const storeLines = [site.name, site.email, site.phone ? `Telefone: ${site.phone}` : '', site.whatsapp ? `WhatsApp: ${site.whatsapp}` : '', site.location];
+  const storeLines = [site.name, site.legalName ? `Entidade empresarial: ${site.legalName}` : '', site.nif ? `NIF: ${site.nif}` : '', site.website ? `Website: ${site.website}` : '', site.email, site.phone ? `Telefone: ${site.phone}` : '', site.whatsapp ? `WhatsApp: ${site.whatsapp}` : '', site.location];
   const customerLines = [order.customerName, order.customerEmail, order.customerPhone ? `Telefone: ${order.customerPhone}` : '', customerAddress ? `Morada: ${customerAddress}` : ''];
   const cardHeight = Math.max(
     drawInfoCard(left, y, cardWidth, 'Dados da loja', storeLines),

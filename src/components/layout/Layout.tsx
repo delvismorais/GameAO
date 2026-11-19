@@ -7,6 +7,7 @@ import { MobileMenu } from './MobileMenu';
 import { SearchOverlay } from './SearchOverlay';
 import { CartDrawer } from './CartDrawer';
 import { AnnouncementPopup } from './AnnouncementPopup';
+import { AssistantWidget } from '../chat/AssistantWidget';
 
 export function Layout({ children }: { children: ReactNode }) {
   const [cartOpen, setCartOpen] = useState(false);
@@ -53,6 +54,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
       {popups.slice(0, 3).map((popup) => <AnnouncementPopup key={popup.id} popup={popup} />)}
+      <AssistantWidget />
     </div>
   );
 }

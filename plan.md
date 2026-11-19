@@ -115,3 +115,21 @@ Breakpoints: 1600, 1440, 1200, 1024, 768, 480. Em ≤1024: menu hambúrguer, bar
 - Comprovativos persistidos recebem resposta de sucesso sem aguardar provedor nem refresh secundário; as notificações ficam na outbox. A interface encerra o estado de upload assim que o POST termina e atualiza os dados em segundo plano.
 - Faturas PDF mantêm os dois modelos visuais, mas passam a usar linhas com altura calculada, cabeçalhos repetidos, quebras de página controladas, totais/rodapé dentro da área imprimível, contactos atuais do site e caminhos de imagem locais confinados ao diretório público.
 - Validação local com fixtures sintéticas, extração de texto/contagem de páginas PDF, testes estáticos e build; sem enviar email/SMS de teste, sem criar encomendas, sem submeter comprovativos reais e sem consulta de dados pessoais da base partilhada.
+
+
+## 3.3. Correções de email, categorias, assistência virtual e faturas — novembro de 2026
+
+- **Emails**: manter os 17 modelos já existentes e aplicar melhorias no wrapper compartilhado de `server/notifications.ts`, usado tanto por envios manuais como automáticos. Garantir URLs HTTPS absolutas, imagens com texto alternativo e links úteis, anexar por CID os assets locais disponíveis com URL como fallback, usar estrutura de tabelas de apresentação, larguras fluidas e compatibilidade progressiva com clientes de email. A disponibilidade HTTP 200 dos assets não obriga um cliente a mostrar imagens remotas; preservar texto/CTA funcional e não prometer contornar bloqueios de imagem do destinatário.
+- **Categorias**: eliminar a allowlist duplicada da rota `src/pages/Category.tsx`; cada slug válido deve chegar ao filtro já dinâmico de `ShopView`, incluindo `free-fire` e categorias mantidas pelo servidor.
+- **Acompanhamento**: por decisão do utilizador, manter verificação com email da compra ou token seguro. Não habilitar consulta só pelo número nem expor dados de encomendas a visitantes sem verificação.
+- **Assistente virtual**: componente global `src/components/chat/AssistantWidget.tsx`, minimizado por omissão e ancorado no canto inferior direito, responsivo a ecrãs pequenos, montado em `Layout`. O frontend chama apenas `POST /api/assistant/chat`; `server/routes/assistant.ts` compõe contexto atual do catálogo ativo, categorias, FAQ, artigos publicados e definições públicas a cada pergunta. Não inclui dados pessoais, encomendas ou comprovativos; conteúdo editorial é sempre tratado como referência não confiável. A chamada Gemini usa a Interactions API, modelo `gemini-3.8-flash`, `store:false`, limites de entrada/saída, timeout e rate limit. A chave fica numa variável privada do Render e não é enviada ao bundle. A funcionalidade de interface e endpoint está implementada; a ativação em produção fica pendente de configurar `GEMINI_API_KEY` em segurança.
+- **Faturas**: preservar a marca GameAO e os dois templates PDF; acrescentar Morásio Digital, NIF `5002678500` e `gameao.shop`. No cabeçalho da primeira página, apresentar o número GA com o mesmo tamanho tipográfico de “FATURA”. O nome legal complementa e não substitui a marca.
+
+### Estrutura adicional desta fase
+
+- `src/components/chat/AssistantWidget.tsx` e `src/styles/assistant.css`: botão minimizado e painel responsivo, com conversa apenas em memória no navegador.
+- `src/components/layout/Layout.tsx`: montagem global em páginas públicas e administrativas.
+- `server/routes/assistant.ts`, registado por `server/index.ts`: endpoint Gemini server-side com consultas somente de leitura aos dados públicos atuais, rate limit e resposta genérica sem a chave.
+- `server/notifications.ts`: wrapper comum de email com estrutura email-safe, validação de URL e imagens clicáveis.
+- `src/pages/Category.tsx`: entrada de slugs dinâmicos no filtro da loja.
+- `server/invoices.ts`: apresentação da marca e dados empresariais, com cabeçalho tipográfico consistente.

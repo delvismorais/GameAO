@@ -111,6 +111,76 @@ function escapeHtml(value: string): string {
 
 const HTML_VARIABLES = new Set(['order_items', 'payment_instructions', 'site_url', 'order_link', 'admin_link', 'reset_link', 'comment_link', 'affiliate_link']);
 
+interface InlineEmailAsset { filename: string; content: Buffer; contentType: string; contentId: string }
+
+async function readPublicEmailImage(src: string, base: string, contentId: string): Promise<InlineEmailAsset | null> {
+  try {
+    const parsed = new URL(src, base);
+    if (parsed.origin !== new URL(base).origin || !parsed.pathname.startsWith('/assets/')) return null;
+    const [{ readFile, stat }, pathModule] = await Promise.all([import('node:fs/promises'), import('node:path')]);
+    const publicRoot = pathModule.resolve(process.cwd(), 'public');
+    const relativePath = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+    const filePath = pathModule.resolve(publicRoot, relativePath);
+    if (!filePath.startsWith(`${publicRoot}${pathModule.sep}`)) return null;
+    const info = await stat(filePath);
+    if (!info.isFile() || info.size > 3 * 1024 * 1024) return null;
+    const extension = pathModule.extname(filePath).toLowerCase();
+    const contentType = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' } as Record<string, string>)[extension];
+    if (!contentType) return null;
+    return { filename: pathModule.basename(filePath), content: await readFile(filePath), contentType, contentId };
+  } catch {
+    return null;
+  }
+}
+
+export async function prepareEmailImages(content: string, base: string): Promise<{ body: string; assets: InlineEmailAsset[] }> {
+  const normalized = content.replace(/\{\{\s*site_url\s*\}\}/g, base);
+  const assets = new Map<string, InlineEmailAsset>();
+  const logo = await readPublicEmailImage(`${base}/assets/gameao-logo.png`, base, 'gameao-logo');
+  if (logo) {
+    assets.set(logo.contentId, logo);
+    assets.set(new URL(`${base}/assets/gameao-logo.png`).toString(), logo);
+  }
+  let imageIndex = 0;
+  let anchorDepth = 0;
+  let cursor = 0;
+  let body = '';
+  const tokens = [...normalized.matchAll(/<a\b[^>]*>|<\/a\s*>|<img\b[^>]*>/gi)];
+  for (const match of tokens) {
+    const token = match[0];
+    const start = match.index ?? 0;
+    body += normalized.slice(cursor, start);
+    cursor = start + token.length;
+    if (/^<a\b/i.test(token)) { anchorDepth += 1; body += token; continue; }
+    if (/^<\/a/i.test(token)) { anchorDepth = Math.max(0, anchorDepth - 1); body += token; continue; }
+
+    let image = token;
+    const source = image.match(/\bsrc\s*=\s*(["'])(.*?)\1/i);
+    if (source) {
+      try {
+        const resolved = new URL(source[2], base);
+        if (resolved.protocol === 'http:') resolved.protocol = 'https:';
+        const allowedProtocol = ['https:', 'cid:', 'data:'].includes(resolved.protocol);
+        const absoluteSrc = (allowedProtocol ? resolved : new URL('/assets/gameao-logo.png', base)).toString();
+        const assetId = `gameao-email-image-${imageIndex + 1}`;
+        let asset = assets.get(absoluteSrc);
+        if (!asset) {
+          asset = await readPublicEmailImage(absoluteSrc, base, assetId) ?? undefined;
+          if (asset) { assets.set(absoluteSrc, asset); imageIndex += 1; }
+        }
+        const displaySrc = asset ? `cid:${asset.contentId}` : absoluteSrc;
+        const fallback = asset ? ` data-fallback-src="${escapeHtml(absoluteSrc)}"` : '';
+        image = image.replace(source[0], `src="${escapeHtml(displaySrc)}"${fallback}`);
+      } catch { /* keep malformed or non-URL image source unchanged */ }
+    }
+    if (!/\balt\s*=/i.test(image)) image = image.replace(/<img\b/i, '<img alt="Imagem GameAO"');
+    if (!/\bborder\s*=/i.test(image)) image = image.replace(/<img\b/i, '<img border="0"');
+    body += anchorDepth > 0 ? image : `<a href="${escapeHtml(`${base}/shop`)}" target="_blank" style="display:block;text-decoration:none;">${image}</a>`;
+  }
+  body += normalized.slice(cursor);
+  return { body, assets: [...new Map([...assets.values()].map((asset) => [asset.contentId, asset])).values()] };
+}
+
 export function renderTemplate(template: string, variables: Record<string, string | number | null | undefined>): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
     const raw = variables[key];
@@ -152,27 +222,27 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
-export function emailLayout(content: string, title: string, site: SiteConfig): string {
+export function emailLayout(content: string, title: string, site: SiteConfig, logoSrc?: string): string {
   const base = publicSiteUrl();
-  const logo = `${base}/assets/gameao-logo.png`;
+  const logo = logoSrc || `${base}/assets/gameao-logo.png`;
   const tagline = site.tagline?.trim() || 'A sua loja de videojogos em Angola.';
   const phoneDigits = normalizePhone(site.whatsapp || site.phone);
   const emailHref = `mailto:${site.email.trim()}`;
   const phoneHref = phoneDigits ? `tel:+${phoneDigits}` : `tel:${encodeURIComponent(site.phone)}`;
   const whatsappHref = phoneDigits ? `https://wa.me/${phoneDigits}` : '';
   return `<!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title></head>
-<body style="margin:0;padding:0;background:#eff2fa;font-family:Rubik,Arial,Helvetica,sans-serif;color:#182028;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eff2fa;padding:24px 10px;"><tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 12px 30px rgba(8,16,24,.12);">
-<tr><td style="background:#00080f;padding:20px 24px;"><a href="${escapeHtml(base)}" style="text-decoration:none;display:inline-block;"><img src="${escapeHtml(logo)}" alt="${escapeHtml(site.name)}" width="150" height="58" style="display:block;width:150px;max-width:100%;height:auto;border:0;"></a></td></tr>
-<tr><td style="height:4px;background:#cd3d0f;font-size:0;line-height:0;">&nbsp;</td></tr>
-<tr><td style="padding:30px 28px 24px;font-size:15px;line-height:1.65;color:#3c4852;">${content}</td></tr>
-<tr><td style="padding:20px 28px;background:#f7f8fa;border-top:1px solid #e6e9ef;font-size:12px;line-height:1.6;color:#7d8893;">
+<body style="margin:0;padding:0;background:#eff2fa;font-family:Arial,Helvetica,sans-serif;color:#182028;">
+<table role="presentation" border="0" width="100%" cellpadding="0" cellspacing="0" style="width:100%;background:#eff2fa;border-collapse:collapse;"><tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" border="0" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-collapse:collapse;">
+<tr><td style="background:#00080f;padding:18px 24px;"><a href="${escapeHtml(base)}" style="text-decoration:none;display:inline-block;"><img src="${escapeHtml(logo)}" alt="${escapeHtml(site.name)}" width="150" style="display:block;width:150px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;"></a></td></tr>
+<tr><td height="4" style="height:4px;background:#cd3d0f;font-size:0;line-height:0;">&nbsp;</td></tr>
+<tr><td style="padding:28px 24px 26px;font-size:15px;line-height:1.65;color:#3c4852;">${content}</td></tr>
+<tr><td style="padding:20px 24px;background:#f7f8fa;border-top:1px solid #e6e9ef;font-size:12px;line-height:1.6;color:#66717d;">
 <p style="margin:0 0 6px;font-weight:700;color:#182028;">${escapeHtml(site.name)}</p>
 <p style="margin:0 0 8px;">${escapeHtml(tagline)}</p>
 <p style="margin:0;"><a href="${escapeHtml(emailHref)}" style="color:#cd3d0f;text-decoration:none;">${escapeHtml(site.email)}</a> · <a href="${escapeHtml(phoneHref)}" style="color:#cd3d0f;text-decoration:none;">${escapeHtml(site.phone)}</a>${whatsappHref ? ` · <a href="${escapeHtml(whatsappHref)}" style="color:#cd3d0f;text-decoration:none;">WhatsApp</a>` : ''} · ${escapeHtml(site.location)}</p>
-<p style="margin:14px 0 0;color:#3c4852;">Atenciosamente,<br><strong>Equipe ${escapeHtml(site.name)}</strong></p>
-<p style="margin:10px 0 0;">Este email foi enviado automaticamente. Se não reconhecer a operação, fale com a nossa equipe.</p>
+<p style="margin:14px 0 0;color:#3c4852;">Atenciosamente,<br><strong>Equipa ${escapeHtml(site.name)}</strong></p>
+<p style="margin:10px 0 0;">Este email foi enviado automaticamente. Se não reconhecer a operação, fale com a nossa equipa.</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 
@@ -212,7 +282,12 @@ async function sendEmail(input: { eventKey: string; to: string; subject: string;
   try {
     const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || input.site.email;
     const text = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const html = emailLayout(input.body, input.subject, input.site);
+    const base = publicSiteUrl();
+    const prepared = await prepareEmailImages(input.body, base);
+    const logoSrc = prepared.assets.some((asset) => asset.contentId === 'gameao-logo') ? 'cid:gameao-logo' : undefined;
+    const html = emailLayout(prepared.body, input.subject, input.site, logoSrc);
+    const resendAttachments = prepared.assets.map((asset) => ({ filename: asset.filename, content: asset.content.toString('base64'), content_type: asset.contentType, content_id: asset.contentId }));
+    const smtpAttachments = prepared.assets.map((asset) => ({ filename: asset.filename, content: asset.content, contentType: asset.contentType, cid: asset.contentId }));
     const smtpHost = (process.env.SMTP_HOST || process.env.EMAIL_HOST || '').trim().toLowerCase();
     let providerMessageId: string;
 
@@ -223,7 +298,7 @@ async function sendEmail(input: { eventKey: string; to: string; subject: string;
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to: [input.to], subject: input.subject, text, html }),
+        body: JSON.stringify({ from, to: [input.to], subject: input.subject, text, html, ...(resendAttachments.length ? { attachments: resendAttachments } : {}) }),
         signal: AbortSignal.timeout(15_000),
       });
       const responseText = await response.text();
@@ -235,7 +310,7 @@ async function sendEmail(input: { eventKey: string; to: string; subject: string;
       if (!result.id) throw new Error('Resend API aceitou a chamada sem devolver o identificador da mensagem.');
       providerMessageId = result.id;
     } else {
-      const info = await getTransporter().sendMail({ from, to: input.to, subject: input.subject, text, html });
+      const info = await getTransporter().sendMail({ from, to: input.to, subject: input.subject, text, html, attachments: smtpAttachments });
       providerMessageId = info.messageId;
     }
 
