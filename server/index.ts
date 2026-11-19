@@ -1063,7 +1063,7 @@ async function serveApp(): Promise<void> {
     vite = await createViteServer({ server: { middlewareMode: true, host: '0.0.0.0' }, appType: 'spa', root });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(root, 'dist')));
+    app.use(express.static(path.join(root, 'dist'), { index: false }));
   }
 
   app.use(async (request, response, next) => {

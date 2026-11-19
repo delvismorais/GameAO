@@ -151,3 +151,7 @@ UPDATE catalog_products
 SET image_url = '/assets/products/motocross-2020.jpg', image_card_url = '/assets/products/motocross-2020.jpg'
 WHERE slug = 'motocross-2020'
   AND image_url = '/assets/products/game-12.jpg';
+UPDATE catalog_products
+SET image_url = '/assets/catalog/contas-free-fire-blue-lock.jpg', image_card_url = '/assets/catalog/contas-free-fire-blue-lock.jpg'
+WHERE slug = 'contas-free-fire-blue-lock'
+  AND (image_url LIKE '/assets/catalog/freefire-%' OR image_url IS NULL OR image_url = '');

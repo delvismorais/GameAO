@@ -375,6 +375,7 @@ CATALOG = [
     ("robux", "steel", "robux", "MOEDAS ROBLOX", ["ROBUX"], "", "ENTREGA RÁPIDA"),
     ("robux-gif-card", "steel", "robux", "GIFT CARD", ["ROBUX"], "", "CÓDIGO DIGITAL"),
     ("luvinha-gamer", "amber", "glove", "ACESSÓRIO GAMER", ["LUVINHA"], "", "ANTIDERRAPANTE"),
+    ("contas-free-fire-blue-lock", "violet", "diamonds", "CONTAS FREE FIRE", ["BLUE LOCK"], "", "CONTA PREMIUM"),
 ]
 
 GAMES = [
