@@ -17,7 +17,9 @@ import {
   notifyPaymentReview,
   notifyUserWelcome,
   emailConfigured,
-  sendEmailCampaign,
+  enqueueNotificationJob,
+  getSiteConfig,
+  startNotificationWorker,
   type OrderStatus,
 } from './notifications';
 import { getPrivateObjectUrl, putMediaObject } from './storage';
@@ -448,7 +450,7 @@ app.post('/api/orders/:orderNumber/proofs', rateLimit({ windowMs: 60 * 60 * 1000
   await getPool().execute(`INSERT INTO payment_proofs (order_id, payment_method_id, storage_key, original_name, mime_type, size_bytes, status, storage_backend) VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?)`, [found.order.id, paymentMethodId, key, file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255), file.mimetype, file.size, stored.backend]);
   await getPool().execute(`UPDATE shop_orders SET payment_method = ?, payment_method_id = ?, status = 'payment_verification' WHERE id = ?`, [paymentMethodCode, paymentMethodId, found.order.id]);
   await getPool().execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, ?, 'payment_verification', 'Comprovativo enviado pelo cliente; aguarda revisão da GameAO.', NULL)`, [found.order.id, found.order.status]);
-  await notifyPaymentProofSubmitted({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone, total_aoa: found.order.total_aoa, status: 'payment_verification', payment_method: paymentMethodCode, user_id: found.order.user_id });
+  await notifyPaymentProofSubmitted({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone, total_aoa: found.order.total_aoa, status: 'payment_verification', payment_method: paymentMethodCode, user_id: found.order.user_id }).catch((error) => console.error('[notifications] comprovativo guardado; falha ao enfileirar alerta', error instanceof Error ? error.message : error));
   response.status(201).json({ ok: true, status: 'payment_verification', message: 'Comprovativo recebido. A equipa GameAO vai rever o documento antes de confirmar o pagamento.' });
 }));
 
@@ -488,7 +490,7 @@ app.patch('/api/admin/payment-proofs/:id/review', asyncRoute(async (request, res
   await getPool().execute(`UPDATE payment_proofs SET status = ?, admin_note = ?, reviewed_at = NOW(), reviewed_by_user_id = ? WHERE id = ?`, [nextProofStatus, note, admin.id, proof.id]);
   if (action === 'approve') await getPool().execute(`UPDATE shop_orders SET payment_status = 'paid', status = 'payment_confirmed' WHERE id = ?`, [proof.order_id]);
   if (action === 'reject' || action === 'request_new') await getPool().execute(`UPDATE shop_orders SET payment_status = 'pending', status = 'awaiting_payment' WHERE id = ? AND payment_status <> 'paid'`, [proof.order_id]);
-  await notifyPaymentReview({ id: Number(order.id), order_number: order.order_number, customer_name: order.customer_name, customer_email: order.customer_email, customer_phone: order.customer_phone, total_aoa: order.total_aoa, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment', payment_method: order.payment_method, user_id: order.user_id }, action as 'approve' | 'reject' | 'request_new', note);
+  await notifyPaymentReview({ id: Number(order.id), order_number: order.order_number, customer_name: order.customer_name, customer_email: order.customer_email, customer_phone: order.customer_phone, total_aoa: order.total_aoa, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment', payment_method: order.payment_method, user_id: order.user_id }, action as 'approve' | 'reject' | 'request_new', note).catch((error) => console.error('[notifications] revisão guardada; falha ao enfileirar alerta', error instanceof Error ? error.message : error));
   if (action === 'approve') await settleAffiliateCommission(Number(order.id));
   await recordAudit(admin.id, `payment_proof.${action}`, 'payment_proof', String(proof.id), { orderNumber: order.order_number, note });
   response.json({ ok: true, proofStatus: nextProofStatus, orderNumber: order.order_number });
@@ -687,7 +689,8 @@ async function deliverInvoice(request: Request, response: Response, adminOnly: b
     return;
   }
   const template = chooseInvoiceTemplate(request.query.template);
-  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, deliveryAddress: found.order.delivery_address, deliveryDate: found.order.delivery_date, shippingAoa: Number(found.order.shipping_aoa ?? 0), paymentMethod: found.order.payment_method, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
+  const site = await getSiteConfig();
+  const pdf = await createInvoicePdf({ orderNumber: found.order.order_number, createdAt: found.order.created_at, customerName: found.order.customer_name, customerEmail: found.order.customer_email, customerPhone: found.order.customer_phone, billingAddress: found.order.billing_address, billingCity: found.order.billing_city, billingProvince: found.order.billing_province, deliveryAddress: found.order.delivery_address, deliveryDate: found.order.delivery_date, shippingAoa: Number(found.order.shipping_aoa ?? 0), paymentMethod: found.order.payment_method, subtotalAoa: Number(found.order.subtotal_aoa), discountAoa: Number(found.order.discount_aoa), totalAoa: Number(found.order.total_aoa), exchangeRate: Number(found.order.exchange_rate_usd_aoa), status: found.order.status, paymentStatus: found.order.payment_status, site }, found.items.map((item: any) => ({ name: item.product_name, imageUrl: item.image_card_url, unitPriceAoa: Number(item.unit_price_aoa), quantity: Number(item.quantity), subtotalAoa: Number(item.subtotal_aoa) })), template, root);
   await getPool().execute(`INSERT INTO invoice_downloads (order_id, template, downloaded_by_user_id) VALUES (?, ?, ?)`, [found.order.id, template, admin?.id ?? null]);
   response.setHeader('Content-Type', 'application/pdf');
   response.setHeader('Content-Disposition', `attachment; filename="fatura-${found.order.order_number}-${template}.pdf"`);
@@ -786,7 +789,10 @@ app.patch('/api/admin/orders/:orderNumber/status', asyncRoute(async (request, re
     }
     await getPool().execute(`UPDATE shop_orders SET stock_released = 1 WHERE id = ?`, [found.order.id]);
   }
-  const notifications = await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, nextStatus);
+  const notifications = await notifyOrderStatusChanged({ id: Number(found.order.id), order_number: found.order.order_number, customer_name: found.order.customer_name, customer_email: found.order.customer_email, customer_phone: found.order.customer_phone }, nextStatus).catch((error) => {
+    console.error('[notifications] estado atualizado; falha ao enfileirar notificação', error instanceof Error ? error.message : error);
+    return { queued: false as const, error: 'Não foi possível enfileirar a notificação.' };
+  });
   if (['payment_confirmed', 'processing', 'ready_for_delivery', 'completed'].includes(nextStatus)) await settleAffiliateCommission(Number(found.order.id));
   await recordAudit(admin.id, 'order.status_changed', 'shop_order', String(found.order.id), { from: previousStatus, to: nextStatus, notifications });
   response.json({ orderNumber: found.order.order_number, status: nextStatus, notifications });
@@ -1060,17 +1066,15 @@ app.post('/api/admin/email/campaigns/:id/send', asyncRoute(async (request, respo
   if (String(campaign.audience_status) !== 'subscribed') { response.status(409).json({ error: 'invalid_audience', message: 'Esta campanha não está limitada a leads subscritos.' }); return; }
   const [lock] = await getPool().execute<any>(`UPDATE email_campaigns SET status = 'sending', updated_at = NOW() WHERE id = ? AND audience_status = 'subscribed' AND (status IN ('draft', 'failed') OR (status = 'sending' AND updated_at < NOW() - INTERVAL '15 minutes'))`, [campaignId]);
   if (Number(lock.affectedRows ?? 0) !== 1) { response.status(409).json({ error: 'campaign_in_progress', message: 'Esta campanha já foi enviada ou está a ser processada por outro administrador.' }); return; }
+  let jobId: string;
   try {
-    const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = 'subscribed' LIMIT 5000`);
-    const result = await sendEmailCampaign({ campaignId, subject: String(campaign.subject), bodyHtml: String(campaign.body_html), leads });
-    const status = result.failedCount > 0 && result.sentCount === 0 ? 'failed' : 'sent';
-    await getPool().execute(`UPDATE email_campaigns SET status = ?, recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [status, result.recipientCount, result.sentCount, campaignId]);
-    await recordAudit(admin.id, 'email.campaign.send', 'email_campaign', String(campaignId), result);
-    response.json({ ok: result.sentCount > 0 || result.recipientCount === 0, ...result, status });
+    jobId = await enqueueNotificationJob({ kind: 'campaign_send', campaignId });
   } catch (error) {
     await getPool().execute(`UPDATE email_campaigns SET status = 'failed', updated_at = NOW() WHERE id = ?`, [campaignId]);
     throw error;
   }
+  await recordAudit(admin.id, 'email.campaign.send', 'email_campaign', String(campaignId), { status: 'queued', jobId }).catch((error) => console.error('[audit] campanha enfileirada, mas a auditoria falhou', error instanceof Error ? error.message : error));
+  response.status(202).json({ ok: true, queued: true, jobId, status: 'queued' });
 }));
 
 async function serveApp(): Promise<void> {
@@ -1116,6 +1120,7 @@ async function serveApp(): Promise<void> {
   app.listen(port, '0.0.0.0', () => console.log(`[gameao] servidor em http://0.0.0.0:${port}`));
   databaseState = await initializePersistence();
   console.log(`[gameao] base de dados: ${databaseState.ready ? 'pronta' : databaseState.error ?? 'não configurada'}`);
+  if (databaseState.ready) startNotificationWorker();
 }
 
 void serveApp();

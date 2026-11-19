@@ -2,7 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, Empty, Field, Notice, api, useJson } from './ui';
 
 type EmailTemplate = { id: number; event_key: string; channel: string; name: string; subject: string; body: string; is_active: number };
-type NoticeState = { tone: 'success' | 'error' | 'warning'; text: string } | null;
+type NoticeState = { tone: 'success' | 'error' | 'warning' | 'info'; text: string } | null;
+type NotificationJob = { id: string; status: string; result?: { status?: string; error?: string; sentCount?: number; failedCount?: number; recipientCount?: number } | null; error?: string | null; campaign?: boolean };
+
+function finalJobNotice(job: NotificationJob): NoticeState {
+  if (job.status === 'failed') return { tone: 'error', text: job.error || 'O envio falhou. Consulte o histórico de entregas.' };
+  if (job.campaign) {
+    const sent = job.result?.sentCount ?? 0;
+    const failed = job.result?.failedCount ?? 0;
+    return { tone: failed ? 'warning' : 'success', text: `Campanha processada: ${sent} emails enviados${failed ? ` e ${failed} falhas` : ''}.` };
+  }
+  if (job.result?.status === 'sent') return { tone: 'success', text: 'Envio concluído e registado no histórico de entregas.' };
+  if (job.result?.status === 'not_configured') return { tone: 'warning', text: job.result.error || 'O serviço do canal ainda não está configurado.' };
+  if (job.result?.status === 'skipped') return { tone: 'warning', text: job.result.error || 'O envio foi ignorado: verifique destinatário e modelo.' };
+  return { tone: 'error', text: job.result?.error || 'O envio não foi concluído; consulte o histórico de entregas.' };
+}
 
 const EMAIL_CATEGORY_ORDER = [
   'Agradecimento', 'Aniversário', 'Anúncio', 'Boas-vindas', 'Confirmação', 'Feedback', 'Lançamento', 'Lembrete',
@@ -47,7 +61,30 @@ export function ManualEmail() {
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState>(null);
+  const [job, setJob] = useState<NotificationJob | null>(null);
   const selected = templates.find((item) => String(item.id) === templateId);
+
+  useEffect(() => {
+    if (!job || ['completed', 'failed'].includes(job.status)) return;
+    let active = true;
+    let timer = 0;
+    const poll = async () => {
+      const result = await api<{ job: NotificationJob }>(`/api/admin/notification-jobs/${job.id}`);
+      if (result.ok && result.data.job) {
+        const next = { ...result.data.job, campaign: job.campaign };
+        setJob(next);
+        if (next.status === 'completed' || next.status === 'failed') {
+          setNotice(finalJobNotice(next));
+          if (next.campaign && next.status === 'completed') setCampaignId(null);
+          return;
+        }
+        setNotice({ tone: 'info', text: next.status === 'processing' ? 'O envio está a ser processado em segundo plano…' : 'Envio aceite e aguardando processamento.' });
+      }
+      if (active) timer = window.setTimeout(poll, 1600);
+    };
+    timer = window.setTimeout(poll, 700);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [job?.id, job?.status]);
 
   useEffect(() => {
     if (templateId || !templates.length) return;
@@ -77,14 +114,16 @@ export function ManualEmail() {
     }
     setBusy(true);
     setNotice(null);
-    const result = await api<{ status?: string; error?: string }>('/api/admin/email/manual', {
+    setJob(null);
+    const result = await api<{ jobId?: string }>('/api/admin/email/manual', {
       method: 'POST',
       body: JSON.stringify({ eventKey: selected.event_key, to, customerName, subject, body }),
     });
     setBusy(false);
-    setNotice(result.ok
-      ? { tone: 'success', text: 'Email enviado e registado no histórico de entregas.' }
-      : { tone: result.data?.status === 'not_configured' ? 'warning' : 'error', text: result.error ?? 'Não foi possível enviar o email.' });
+    if (result.ok && result.data.jobId) {
+      setJob({ id: result.data.jobId, status: 'queued' });
+      setNotice({ tone: 'info', text: 'Email aceite e colocado na fila de envio.' });
+    } else setNotice({ tone: 'error', text: result.error ?? 'Não foi possível colocar o email na fila.' });
   };
 
   const saveCampaignDraft = async () => {
@@ -122,14 +161,17 @@ export function ManualEmail() {
     if (!window.confirm(`Confirmar envio de “${campaignName}” para ${count} contatos com subscrição ativa? Esta ação enviará os emails.`)) return;
     setBusy(true);
     setNotice(null);
+    setJob(null);
     const result = await api<{ sentCount?: number; failedCount?: number }>(`/api/admin/email/campaigns/${campaignId}/send`, { method: 'POST' });
     setBusy(false);
     if (!result.ok) {
-      setNotice({ tone: result.error?.toLowerCase().includes('configure servidor') ? 'warning' : 'error', text: result.error ?? 'O envio da campanha falhou.' });
+      setNotice({ tone: 'error', text: result.error ?? 'Não foi possível colocar a campanha na fila.' });
       return;
     }
-    setCampaignId(null);
-    setNotice({ tone: 'success', text: `Envio processado: ${result.data.sentCount ?? 0} emails enviados e ${result.data.failedCount ?? 0} falhas.` });
+    if ('jobId' in result.data && result.data.jobId) {
+      setJob({ id: String(result.data.jobId), status: 'queued', campaign: true });
+      setNotice({ tone: 'info', text: 'Campanha aceite e colocada na fila de envio.' });
+    } else setNotice({ tone: 'error', text: 'O servidor não devolveu o identificador do envio.' });
   };
 
   const editBody = (value: string) => { setBody(value); setCampaignId(null); };
@@ -157,9 +199,9 @@ export function ManualEmail() {
           <Field label="Assunto *"><input value={subject} onChange={(event) => editSubject(event.target.value)} maxLength={255} placeholder="Assunto do email" /></Field>
           <Field label="Corpo HTML *" hint="Variáveis disponíveis: {{customer_name}}, {{customer_email}}, {{site_name}}, {{site_url}}, {{site_email}}, {{site_phone}}."><textarea rows={14} value={body} onChange={(event) => editBody(event.target.value)} /></Field>
           <div className="admin-form__actions">
-            {mode === 'individual' ? <button type="button" className="btn btn--primary" onClick={() => void sendIndividual()} disabled={busy || !selected || !to.trim() || !subject.trim() || !body.trim()}>{busy ? 'A enviar…' : 'Enviar email'}</button> : <>
+            {mode === 'individual' ? <button type="button" className="btn btn--primary" onClick={() => void sendIndividual()} disabled={busy || Boolean(job && !['completed', 'failed'].includes(job.status)) || !selected || !to.trim() || !subject.trim() || !body.trim()}>{busy ? 'A colocar na fila…' : 'Enviar email'}</button> : <>
               <button type="button" className="btn btn--outline" onClick={() => void saveCampaignDraft()} disabled={busy || Boolean(campaignId) || !selected || !campaignName.trim() || !subject.trim() || !body.trim()}>{busy ? 'A guardar…' : campaignId ? 'Rascunho guardado' : 'Guardar rascunho de envio'}</button>
-              {campaignId && <button type="button" className="btn btn--primary" onClick={() => void sendCampaign()} disabled={busy}>{busy ? 'A processar…' : 'Confirmar e enviar em massa'}</button>}
+              {campaignId && <button type="button" className="btn btn--primary" onClick={() => void sendCampaign()} disabled={busy || Boolean(job && !['completed', 'failed'].includes(job.status))}>{busy ? 'A colocar na fila…' : 'Confirmar e enviar em massa'}</button>}
             </>}
           </div>
         </div>
@@ -173,40 +215,97 @@ export function ManualEmail() {
 }
 
 export function ManualSms() {
+  const { data: templateData, loading } = useJson<{ templates: EmailTemplate[] }>('/api/admin/notification-templates');
+  const templates = useMemo(() => (templateData?.templates ?? []).filter((item) => item.channel === 'sms' && item.is_active), [templateData]);
   const [to, setTo] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [orderNumber, setOrderNumber] = useState('');
+  const [orderTotal, setOrderTotal] = useState('');
+  const [orderStatus, setOrderStatus] = useState('');
+  const [templateId, setTemplateId] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState>(null);
+  const [job, setJob] = useState<NotificationJob | null>(null);
   const normalized = to.replace(/[\s()-]/g, '');
   const validPhone = /^(?:0?9\d{8}|\+?2449\d{8})$/.test(normalized);
+  const selected = templates.find((item) => String(item.id) === templateId);
+  const preview = message.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => ({
+    site_name: 'GameAO', site_url: window.location.origin, site_email: 'geral@gameao.shop', site_phone: '973 929 712',
+    customer_name: customerName || 'Cliente', customer_email: customerEmail, customer_phone: to,
+    order_number: orderNumber || 'GA241', order_total: orderTotal ? `${orderTotal} Kz` : '25.000 Kz',
+    order_status: orderStatus || 'Em processamento',
+  }[key] ?? ''));
+
+  useEffect(() => {
+    if (templateId || !templates.length) return;
+    setTemplateId(String(templates[0].id));
+    setMessage(templates[0].body);
+  }, [templateId, templates]);
+
+  useEffect(() => {
+    if (!job || ['completed', 'failed'].includes(job.status)) return;
+    let active = true;
+    let timer = 0;
+    const poll = async () => {
+      const result = await api<{ job: NotificationJob }>(`/api/admin/notification-jobs/${job.id}`);
+      if (result.ok && result.data.job) {
+        const next = result.data.job;
+        setJob(next);
+        if (next.status === 'completed' || next.status === 'failed') {
+          setNotice(finalJobNotice(next));
+          return;
+        }
+        setNotice({ tone: 'info', text: next.status === 'processing' ? 'O SMS está a ser enviado em segundo plano…' : 'SMS aceite e aguardando processamento.' });
+      }
+      if (active) timer = window.setTimeout(poll, 1600);
+    };
+    timer = window.setTimeout(poll, 700);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [job?.id, job?.status]);
+
+  const chooseTemplate = (id: string) => {
+    setTemplateId(id);
+    const template = templates.find((item) => String(item.id) === id);
+    if (template) setMessage(template.body);
+    setJob(null);
+    setNotice(null);
+  };
 
   const send = async () => {
-    if (!validPhone || !message.trim() || message.length > 160) {
-      setNotice({ tone: 'error', text: 'Indique um número angolano válido e uma mensagem com até 160 caracteres.' });
+    if (!validPhone || !message.trim() || !preview.trim() || preview.length > 160) {
+      setNotice({ tone: 'error', text: !validPhone ? 'Indique um número angolano válido.' : 'A mensagem personalizada ultrapassa 160 caracteres. Encurte-a ou ajuste os campos.' });
       return;
     }
     setBusy(true);
     setNotice(null);
-    const result = await api<{ status?: string }>('/api/admin/sms/manual', { method: 'POST', body: JSON.stringify({ to, message }) });
+    setJob(null);
+    const result = await api<{ jobId?: string }>('/api/admin/sms/manual', { method: 'POST', body: JSON.stringify({ to, message, eventKey: selected?.event_key ?? 'admin.manual_sms', customerName, customerEmail, orderNumber, orderTotal: orderTotal ? Number(orderTotal) : null, orderStatus }) });
     setBusy(false);
-    setNotice(result.ok
-      ? { tone: 'success', text: 'SMS enviado e registado no histórico de entregas.' }
-      : { tone: result.data?.status === 'not_configured' ? 'warning' : 'error', text: result.error ?? 'Não foi possível enviar o SMS.' });
+    if (result.ok && result.data.jobId) {
+      setJob({ id: result.data.jobId, status: 'queued' });
+      setNotice({ tone: 'info', text: 'SMS aceite e colocado na fila de envio.' });
+    } else setNotice({ tone: 'error', text: result.error ?? 'Não foi possível colocar o SMS na fila.' });
   };
 
   return <div className="admin-communication-workspace">
     <div className="admin-communication-intro">
-      <div><p className="page-kicker">SMS GameAO</p><h3>Envio manual para um número</h3><p>Use um número angolano e uma mensagem curta. O servidor normaliza o número, envia pela TelcoSMS e regista o resultado.</p></div>
+      <div><p className="page-kicker">SMS GameAO</p><h3>Envio manual personalizado</h3><p>Escolha um modelo SMS editável, reveja as variáveis e acompanhe o envio sem manter o formulário bloqueado.</p></div>
       <Badge tone="info">Até 160 caracteres</Badge>
     </div>
     <Notice message={notice?.text} tone={notice?.tone ?? 'success'} />
     <section className="admin-communication-panel admin-sms-panel">
       <div className="admin-card__head"><div><h3>Compor SMS</h3><p className="admin-card__subhead">Formatos aceitos: 973929712, 244973929712 ou +244973929712.</p></div></div>
       <div className="admin-form">
+        <Field label="Modelo SMS"><select value={templateId} onChange={(event) => chooseTemplate(event.target.value)}><option value="">Mensagem personalizada</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.event_key}</option>)}</select>{loading && <small>A carregar modelos SMS…</small>}</Field>
         <Field label="Número de destino *"><input type="tel" value={to} onChange={(event) => setTo(event.target.value)} placeholder="973929712" autoComplete="tel" aria-invalid={Boolean(to) && !validPhone} /></Field>
-        <Field label="Mensagem *" hint="Use {{site_name}}, {{site_phone}} ou {{customer_phone}} se precisar de dados da loja."><textarea rows={5} maxLength={160} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Escreva a mensagem SMS…" /></Field>
-        <div className="admin-sms-counter"><span>{message.length}/160 caracteres</span><span>{validPhone || !to ? 'Número válido' : 'Número inválido'}</span></div>
-        <div className="admin-form__actions"><button type="button" className="btn btn--primary" onClick={() => void send()} disabled={busy || !validPhone || !message.trim() || message.length > 160}>{busy ? 'A enviar…' : 'Enviar SMS'}</button></div>
+        <div className="form-row"><Field label="Nome do destinatário"><input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Nome para {{customer_name}}" /></Field><Field label="Email (opcional)"><input type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="cliente@exemplo.com" /></Field></div>
+        <div className="form-row"><Field label="Número da encomenda"><input value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="GA241" /></Field><Field label="Total da encomenda (Kz)"><input inputMode="decimal" value={orderTotal} onChange={(event) => setOrderTotal(event.target.value)} placeholder="25000" /></Field><Field label="Estado da encomenda"><input value={orderStatus} onChange={(event) => setOrderStatus(event.target.value)} placeholder="Em processamento" /></Field></div>
+        <Field label="Mensagem *" hint="Variáveis: {{customer_name}}, {{customer_email}}, {{customer_phone}}, {{order_number}}, {{order_total}}, {{order_status}}, {{site_name}}, {{site_phone}}, {{site_url}}."><textarea rows={5} maxLength={500} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Escreva a mensagem SMS…" /></Field>
+        <Field label="Pré-visualização personalizada"><textarea rows={3} readOnly value={preview} /></Field>
+        <div className="admin-sms-counter"><span>{preview.length}/160 caracteres personalizados</span><span>{validPhone || !to ? 'Número válido' : 'Número inválido'}</span></div>
+        <div className="admin-form__actions"><button type="button" className="btn btn--primary" onClick={() => void send()} disabled={busy || Boolean(job && !['completed', 'failed'].includes(job.status)) || !validPhone || !message.trim() || preview.length > 160}>{busy ? 'A colocar na fila…' : 'Enviar SMS'}</button></div>
       </div>
     </section>
   </div>;

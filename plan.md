@@ -105,3 +105,13 @@ public/
 ## 7. Responsividade e acessibilidade
 
 Breakpoints: 1600, 1440, 1200, 1024, 768, 480. Em ≤1024: menu hambúrguer, barra inferior fixa (Categorias, Pesquisar, Desejos, Carrinho), grelha de 2 cartões em mobile, sidebar da loja em gaveta, hero 480:300. Sem scroll horizontal; foco visível; `aria-label` em ícones; navegação por teclado nos menus; `prefers-reduced-motion` desativa autoplay e transições longas.
+
+
+### 3.2. Fila de notificações e correções operacionais — novembro de 2026
+
+- Email e SMS manuais/automáticos deixam de depender da duração do provedor no request que altera a encomenda, recebe contacto ou confirma upload. Uma outbox persistente em PostgreSQL guarda o trabalho antes da resposta HTTP; um worker no servidor processa em background, grava o resultado e expõe apenas estado/erro/resultados agregados a rotas administrativas protegidas.
+- Cada job é processado uma vez por padrão, sem retry automático de envio ambíguo, para não duplicar SMS/email que o provedor possa ter aceitado antes de um timeout. SMTP, WhatsApp e TelcoSMS têm limites de espera definidos; canais independentes de um evento são enviados em paralelo. A interface distingue fila, processamento, sucesso e falha e consulta o estado sem bloquear o request de envio.
+- Modelos SMS usam canal `sms` e chave de evento correspondente; automações selecionam apenas um modelo SMS ativo da mesma chave de evento e nunca convertem conteúdo de email/WhatsApp em SMS. O compositor manual seleciona modelo, permite edição/pré-visualização e suporta variáveis de cliente, contacto, encomenda e loja.
+- Comprovativos persistidos recebem resposta de sucesso sem aguardar provedor nem refresh secundário; as notificações ficam na outbox. A interface encerra o estado de upload assim que o POST termina e atualiza os dados em segundo plano.
+- Faturas PDF mantêm os dois modelos visuais, mas passam a usar linhas com altura calculada, cabeçalhos repetidos, quebras de página controladas, totais/rodapé dentro da área imprimível, contactos atuais do site e caminhos de imagem locais confinados ao diretório público.
+- Validação local com fixtures sintéticas, extração de texto/contagem de páginas PDF, testes estáticos e build; sem enviar email/SMS de teste, sem criar encomendas, sem submeter comprovativos reais e sem consulta de dados pessoais da base partilhada.

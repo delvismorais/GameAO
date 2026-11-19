@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer';
-import { getPool } from './db';
+import { getPool, type DbConnection } from './db';
 
 export type OrderStatus = 'awaiting_payment' | 'payment_verification' | 'payment_confirmed' | 'processing' | 'ready_for_delivery' | 'completed' | 'cancelled' | 'refunded';
 export type NotificationChannel = 'email' | 'whatsapp' | 'sms' | 'in_app';
@@ -120,6 +120,13 @@ export function renderTemplate(template: string, variables: Record<string, strin
   });
 }
 
+function renderPlainTemplate(template: string, variables: Record<string, string | number | null | undefined>): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
+    const value = variables[key];
+    return value == null ? '' : String(value);
+  });
+}
+
 export function normalizePhone(phone: string | null | undefined): string {
   const digits = String(phone ?? '').replace(/\D/g, '');
   if (!digits) return '';
@@ -137,6 +144,9 @@ function getTransporter(): Transporter {
       port: Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587),
       secure: (process.env.SMTP_SECURE || process.env.EMAIL_SECURE) === 'true',
       auth: (process.env.SMTP_USER || process.env.EMAIL_USER) ? { user: process.env.SMTP_USER || process.env.EMAIL_USER, pass: process.env.SMTP_PASSWORD || process.env.EMAIL_PASS } : undefined,
+      connectionTimeout: 8_000,
+      greetingTimeout: 8_000,
+      socketTimeout: 15_000,
     });
   }
   return transporter;
@@ -229,6 +239,7 @@ async function sendWhatsApp(input: { eventKey: string; to: string; body: string;
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ messaging_product: 'whatsapp', to: phone, type: 'text', text: { preview_url: true, body: input.body.slice(0, 4096) } }),
+      signal: AbortSignal.timeout(12_000),
     });
     const data = await result.json() as { messages?: Array<{ id?: string }>; error?: { message?: string } };
     if (!result.ok) throw new Error(data.error?.message ?? `WhatsApp API HTTP ${result.status}`);
@@ -248,8 +259,12 @@ async function sendSms(input: { eventKey: string; to: string; body: string; user
     await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'not_configured', error: 'TelcoSMS não configurado.', userId: input.userId, orderId: input.orderId });
     return 'not_configured';
   }
+  const message = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (message.length > 160) {
+    await logDelivery({ eventKey: input.eventKey, channel: 'sms', recipient: phone, status: 'failed', error: 'A mensagem SMS excede o limite de 160 caracteres.', userId: input.userId, orderId: input.orderId });
+    return 'failed';
+  }
   try {
-    const message = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
     const endpoint = process.env.TELCOSMS_API_URL?.trim() || 'https://telcosms.co.ao/send_message';
     const result = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain' }, body: JSON.stringify({ message: { api_key_app: process.env.TELCOSMS_API_KEY, phone_number: phone, message_body: message } }), signal: AbortSignal.timeout(15000) });
     const raw = await result.text();
@@ -337,57 +352,49 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   };
   const channels: NotificationChannel[] = input.channels ?? (isAdminEvent ? ['in_app', 'email'] : ['email', 'whatsapp', 'sms', 'in_app']);
   const prefs = await userPreferences(user?.id);
-  const result: DispatchResult = {};
   const orderId = input.order?.id ?? null;
-
-  for (const channel of channels) {
+  const entries = await Promise.all(channels.map(async (channel): Promise<[NotificationChannel, DeliveryStatus]> => {
     if (channel === 'sms') {
       const recipient = user?.phone ?? '';
-      if (!recipient) { result.sms = 'skipped'; continue; }
-      const smsTemplate = await getTemplate(input.eventKey, 'whatsapp') ?? await getTemplate(input.eventKey, 'email');
-      if (!smsTemplate) { result.sms = 'skipped'; continue; }
-      result.sms = await sendSms({ eventKey: input.eventKey, to: recipient, body: renderTemplate(smsTemplate.body, variables), userId: user?.id, orderId });
-      continue;
+      if (!recipient) return ['sms', 'skipped'];
+      const smsTemplate = await getTemplate(input.eventKey, 'sms');
+      if (!smsTemplate) return ['sms', 'skipped'];
+      return ['sms', await sendSms({ eventKey: input.eventKey, to: recipient, body: renderPlainTemplate(smsTemplate.body, variables), userId: user?.id, orderId })];
     }
     const template = await getTemplate(input.eventKey, channel);
-    if (!template) { result[channel] = 'skipped'; continue; }
+    if (!template) return [channel, 'skipped'];
     const subject = renderTemplate(template.subject, variables);
     const body = renderTemplate(template.body, variables);
     if (channel === 'in_app') {
       if (isAdminEvent) {
         await createAdminNotification({ title: subject || template.body.slice(0, 80), message: body, level: input.level ?? 'info', link: input.link ?? null, eventKey: input.eventKey, entityType: input.entityType, entityId: input.entityId });
-        result.in_app = 'sent';
+        return ['in_app', 'sent'];
       } else if (user?.id && prefs.inApp) {
         const created = await createUserNotification({ userId: user.id, eventKey: input.eventKey, title: subject || 'Notificação GameAO', message: body, link: input.link ?? (variables.order_link ? String(variables.order_link) : null), type: input.type ?? 'info', orderId });
-        result.in_app = created ? 'sent' : 'failed';
-      } else {
-        result.in_app = 'skipped';
+        return ['in_app', created ? 'sent' : 'failed'];
       }
-      continue;
+      return ['in_app', 'skipped'];
     }
     if (channel === 'email') {
       if (isAdminEvent) {
         const recipients = await adminRecipients();
-        let status: DeliveryStatus = recipients.length ? 'sent' : 'skipped';
-        for (const to of recipients) {
-          const sent = await sendEmail({ eventKey: input.eventKey, to, subject, body, orderId, site });
-          if (sent !== 'sent') status = sent;
-        }
-        result.email = status;
-        continue;
+        if (!recipients.length) return ['email', 'skipped'];
+        const statuses = await Promise.all(recipients.map((to) => sendEmail({ eventKey: input.eventKey, to, subject, body, orderId, site })));
+        const status: DeliveryStatus = statuses.includes('failed') ? 'failed' : statuses.includes('not_configured') ? 'not_configured' : 'sent';
+        return ['email', status];
       }
       const recipient = user?.email ?? '';
-      if (!recipient || !prefs.email) { result.email = 'skipped'; continue; }
-      result.email = await sendEmail({ eventKey: input.eventKey, to: recipient, subject, body, userId: user?.id, orderId, site });
-      continue;
+      if (!recipient || !prefs.email) return ['email', 'skipped'];
+      return ['email', await sendEmail({ eventKey: input.eventKey, to: recipient, subject, body, userId: user?.id, orderId, site })];
     }
     if (channel === 'whatsapp') {
       const recipient = user?.phone ?? '';
-      if (!recipient || !prefs.whatsapp) { result.whatsapp = 'skipped'; continue; }
-      result.whatsapp = await sendWhatsApp({ eventKey: input.eventKey, to: recipient, body, userId: user?.id, orderId });
+      if (!recipient || !prefs.whatsapp) return ['whatsapp', 'skipped'];
+      return ['whatsapp', await sendWhatsApp({ eventKey: input.eventKey, to: recipient, body, userId: user?.id, orderId })];
     }
-  }
-  return result;
+    return [channel, 'skipped'];
+  }));
+  return Object.fromEntries(entries) as DispatchResult;
 }
 
 export function orderVariables(order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string; player_id?: string | null; player_nickname?: string | null }> }): Record<string, string> {
@@ -407,6 +414,7 @@ function statusError(status: DeliveryStatus, channel: NotificationChannel): stri
     return channel === 'email' ? 'SMTP não configurado.' : channel === 'sms' ? 'TelcoSMS não configurado.' : channel === 'whatsapp' ? 'WhatsApp Business API não configurada.' : 'Canal interno indisponível.';
   }
   if (status === 'skipped') return 'Destinatário ou modelo não disponível para este canal.';
+  if (status === 'failed') return `Falha no envio pelo canal ${channel}; consulte o histórico de entregas.`;
   return undefined;
 }
 
@@ -438,7 +446,7 @@ export async function sendManualNotification(input: {
     ...orderVariables(order),
   };
   const renderedSubject = renderTemplate(String(input.subject ?? ''), variables);
-  const renderedBody = renderTemplate(input.body, variables);
+  const renderedBody = input.channel === 'sms' ? renderPlainTemplate(input.body, variables) : renderTemplate(input.body, variables);
   const plainBody = renderedBody.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   const recipient = String(input.recipient ?? '').trim() || (input.channel === 'email' ? order.customer_email : order.customer_phone ?? '');
   let status: DeliveryStatus;
@@ -451,6 +459,10 @@ export async function sendManualNotification(input: {
     else status = await sendWhatsApp({ eventKey, to: recipient, body: plainBody, userId: order.user_id, orderId: order.id });
   } else if (input.channel === 'sms') {
     if (!recipient) status = 'skipped';
+    else if (plainBody.length > 160) {
+      status = 'failed';
+      await logDelivery({ eventKey, channel: 'sms', recipient: normalizePhone(recipient), status, error: 'A mensagem SMS excede o limite de 160 caracteres.', userId: order.user_id, orderId: order.id });
+    }
     else status = await sendSms({ eventKey, to: recipient, body: plainBody, userId: order.user_id, orderId: order.id });
   } else if (order.user_id) {
     const created = await createUserNotification({ userId: Number(order.user_id), eventKey, title: renderedSubject || `Atualização da encomenda ${order.order_number}`, message: renderedBody, link: String(variables.order_link), orderId: order.id });
@@ -492,18 +504,27 @@ export async function sendManualEmail(input: {
   return { status, error: statusError(status, 'email') };
 }
 
-export async function sendManualSms(input: { to: string; body: string; eventKey?: string }): Promise<{ status: DeliveryStatus; error?: string }> {
+export async function sendManualSms(input: { to: string; body: string; eventKey?: string; customerName?: string | null; customerEmail?: string | null; orderNumber?: string | null; orderTotal?: number | string | null; orderStatus?: string | null }): Promise<{ status: DeliveryStatus; error?: string }> {
   const site = await getSiteConfig();
   const to = normalizePhone(input.to);
-  const body = renderTemplate(input.body, {
+  const eventKey = input.eventKey ?? 'admin.manual_sms';
+  const body = renderPlainTemplate(input.body, {
     site_name: site.name,
     site_url: publicSiteUrl(),
     site_email: site.email,
     site_phone: site.phone,
-    customer_name: 'cliente',
+    customer_name: input.customerName?.trim() || 'cliente',
+    customer_email: input.customerEmail?.trim() ?? '',
     customer_phone: to,
+    order_number: input.orderNumber ?? '',
+    order_total: input.orderTotal == null ? '' : formatAoa(input.orderTotal),
+    order_status: ORDER_STATUS_LABELS[String(input.orderStatus ?? '')] ?? String(input.orderStatus ?? ''),
   });
-  const status = await sendSms({ eventKey: input.eventKey ?? 'admin.manual_sms', to, body });
+  if (body.length > 160) {
+    await logDelivery({ eventKey, channel: 'sms', recipient: to, status: 'failed', error: 'A mensagem personalizada excede o limite de 160 caracteres.' });
+    return { status: 'failed', error: 'A mensagem personalizada excede o limite de 160 caracteres.' };
+  }
+  const status = await sendSms({ eventKey, to, body });
   return { status, error: statusError(status, 'sms') };
 }
 
@@ -516,66 +537,74 @@ export async function sendEmailCampaign(input: {
   const site = await getSiteConfig();
   let sentCount = 0;
   let failedCount = 0;
-  for (const lead of input.leads) {
-    const variables: Record<string, string> = {
-      site_name: site.name,
-      site_url: publicSiteUrl(),
-      customer_name: lead.name?.trim() || 'cliente',
-      customer_email: lead.email,
-      admin_link: `${publicSiteUrl()}/admin`,
-    };
-    const result = await sendEmail({
-      eventKey: `campaign.email.${input.campaignId}`,
-      to: lead.email,
-      subject: renderTemplate(input.subject, variables),
-      body: renderTemplate(input.bodyHtml, variables),
-      site,
-    });
-    if (result === 'sent') sentCount += 1;
-    else failedCount += 1;
-  }
+  let nextIndex = 0;
+  const sendNext = async () => {
+    while (nextIndex < input.leads.length) {
+      const lead = input.leads[nextIndex++];
+      const variables: Record<string, string> = {
+        site_name: site.name,
+        site_url: publicSiteUrl(),
+        site_email: site.email,
+        site_phone: site.phone,
+        customer_name: lead.name?.trim() || 'cliente',
+        customer_email: lead.email,
+        customer_phone: '',
+        admin_link: `${publicSiteUrl()}/admin`,
+      };
+      const result = await sendEmail({
+        eventKey: `campaign.email.${input.campaignId}`,
+        to: lead.email,
+        subject: renderTemplate(input.subject, variables),
+        body: renderTemplate(input.bodyHtml, variables),
+        site,
+      });
+      if (result === 'sent') sentCount += 1;
+      else failedCount += 1;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(5, input.leads.length) }, () => sendNext()));
   return { recipientCount: input.leads.length, sentCount, failedCount };
 }
 
-export async function notifyOrderStatusChanged(order: NotificationOrder, status: string, extras?: Record<string, string | number | null | undefined>): Promise<DispatchResult> {
+export async function notifyOrderStatusChanged(order: NotificationOrder, status: string, extras?: Record<string, string | number | null | undefined>): Promise<{ queued: true; jobId: string }> {
   const eventKey = STATUS_EVENTS[status] ?? 'order.created';
-  return dispatch({
+  const jobId = await enqueueNotificationJob({ kind: 'dispatch', input: {
     eventKey,
     order: { ...order, status },
     variables: { ...extras },
     channels: ['email', 'whatsapp', 'sms', 'in_app'],
-  });
+  } });
+  return { queued: true, jobId };
 }
 
-export async function notifyOrderCreated(order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string }> }, paymentInstructions = ''): Promise<DispatchResult> {
-  const variables = orderVariables(order);
-  variables.payment_instructions = paymentInstructions ? `<p>${escapeHtml(paymentInstructions)}</p>` : '';
-  const result = await dispatch({ eventKey: 'order.created', order, variables, channels: ['email', 'whatsapp', 'sms', 'in_app'] });
-  await dispatch({ eventKey: 'admin.new_order', order, variables, channels: ['in_app', 'email'], entityType: 'shop_order', entityId: order.order_number });
-  return result;
+export async function notifyOrderCreated(order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string; player_id?: string | null; player_nickname?: string | null }> }, paymentInstructions = '', connection?: DbConnection): Promise<{ queued: true; jobId: string }> {
+  const jobId = await enqueueNotificationJob({ kind: 'order_created', order, paymentInstructions }, connection);
+  return { queued: true, jobId };
 }
 
-export async function notifyPaymentProofSubmitted(order: NotificationOrder): Promise<DispatchResult> {
-  const result = await dispatch({ eventKey: 'order.payment_proof_submitted', order: { ...order, status: 'payment_verification' }, channels: ['email', 'sms', 'in_app'] });
-  await dispatch({ eventKey: 'admin.payment_proof', order, channels: ['in_app', 'email'], entityType: 'shop_order', entityId: order.order_number });
-  return result;
+export async function notifyPaymentProofSubmitted(order: NotificationOrder, connection?: DbConnection): Promise<{ queued: true; jobId: string }> {
+  const jobId = await enqueueNotificationJob({ kind: 'proof_submitted', order }, connection);
+  return { queued: true, jobId };
 }
 
-export async function notifyPaymentReview(order: NotificationOrder, action: 'approve' | 'reject' | 'request_new', note?: string | null): Promise<DispatchResult> {
+export async function notifyPaymentReview(order: NotificationOrder, action: 'approve' | 'reject' | 'request_new', note?: string | null): Promise<{ queued: true; jobId: string }> {
   const eventKey = action === 'approve' ? 'order.payment_confirmed' : action === 'reject' ? 'order.payment_rejected' : 'order.payment_proof_requested';
-  return dispatch({ eventKey, order: { ...order, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment' }, variables: { admin_note: note ?? '' }, channels: ['email', 'whatsapp', 'sms', 'in_app'] });
+  const jobId = await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey, order: { ...order, status: action === 'approve' ? 'payment_confirmed' : 'awaiting_payment' }, variables: { admin_note: note ?? '' }, channels: ['email', 'whatsapp', 'sms', 'in_app'] } });
+  return { queued: true, jobId };
 }
 
-export async function notifyUserWelcome(user: NotificationUser): Promise<DispatchResult> {
-  return dispatch({ eventKey: 'user.welcome', user, channels: ['email', 'in_app'] });
+export async function notifyUserWelcome(user: NotificationUser): Promise<{ queued: true; jobId: string }> {
+  const jobId = await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'user.welcome', user, channels: ['email', 'in_app'] } });
+  return { queued: true, jobId };
 }
 
-export async function notifyPasswordReset(user: NotificationUser, token: string): Promise<DispatchResult> {
-  return dispatch({ eventKey: 'user.password_reset', user, variables: { reset_link: `${publicSiteUrl()}/my-account?reset=${encodeURIComponent(token)}` }, channels: ['email'] });
+export async function notifyPasswordReset(user: NotificationUser, token: string): Promise<{ queued: true; jobId: string }> {
+  const jobId = await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'user.password_reset', user, variables: { reset_link: `${publicSiteUrl()}/my-account?reset=${encodeURIComponent(token)}` }, channels: ['email'] } });
+  return { queued: true, jobId };
 }
 
 export async function notifyContactMessage(input: { name: string; email: string; message: string }): Promise<void> {
-  await dispatch({ eventKey: 'admin.contact_message', variables: { contact_name: input.name, contact_email: input.email, contact_message: input.message }, channels: ['in_app', 'email'], entityType: 'contact_message' });
+  await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'admin.contact_message', variables: { customer_name: input.name, customer_email: input.email, contact_name: input.name, contact_email: input.email, contact_message: input.message }, channels: ['in_app', 'email'], entityType: 'contact_message' } });
 }
 
 export async function notifyCommentPending(input: { name: string; postTitle: string; excerpt: string; postSlug: string }): Promise<void> {
@@ -584,28 +613,28 @@ export async function notifyCommentPending(input: { name: string; postTitle: str
 
 export async function notifyCommentApproved(user: NotificationUser | null, postTitle: string, postSlug: string): Promise<void> {
   if (!user) return;
-  await dispatch({ eventKey: 'blog.comment_approved', user, variables: { post_title: postTitle, comment_link: `${publicSiteUrl()}/blog/${postSlug}` }, channels: ['email', 'in_app'] });
+  await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'blog.comment_approved', user, variables: { post_title: postTitle, comment_link: `${publicSiteUrl()}/blog/${postSlug}` }, channels: ['email', 'in_app'] } });
 }
 
 export async function notifyAffiliateJoined(user: NotificationUser, code: string, rate: number): Promise<void> {
-  await dispatch({ eventKey: 'affiliate.joined', user, variables: { affiliate_code: code, commission_rate: rate }, channels: ['email', 'in_app'] });
+  await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'affiliate.joined', user, variables: { affiliate_code: code, commission_rate: rate }, channels: ['email', 'in_app'] } });
 }
 
 export async function notifyAffiliateCommission(user: NotificationUser, commission: number, orderNumber: string): Promise<void> {
-  await dispatch({ eventKey: 'affiliate.commission', user, variables: { commission: formatAoa(commission), order_number: orderNumber }, channels: ['email', 'in_app'] });
+  await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'affiliate.commission', user, variables: { commission: formatAoa(commission), order_number: orderNumber }, channels: ['email', 'in_app'] } });
 }
 
 export async function notifyAffiliatePayout(user: NotificationUser, amount: number): Promise<void> {
-  await dispatch({ eventKey: 'affiliate.payout', user, variables: { payout_amount: formatAoa(amount) }, channels: ['email', 'in_app'] });
+  await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'affiliate.payout', user, variables: { payout_amount: formatAoa(amount) }, channels: ['email', 'in_app'] } });
 }
 
 export async function notifyLowStock(product: { id: string; name: string; stock_quantity: number }): Promise<void> {
-  await dispatch({ eventKey: 'admin.low_stock', variables: { product_name: product.name, stock_quantity: product.stock_quantity }, channels: ['in_app', 'email'], entityType: 'product', entityId: product.id, level: 'warning' });
+  await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'admin.low_stock', variables: { product_name: product.name, stock_quantity: product.stock_quantity }, channels: ['in_app', 'email'], entityType: 'product', entityId: product.id, level: 'warning' } });
 }
 
 export async function sendTestNotification(eventKey: string, channel: NotificationChannel, to: string): Promise<{ status: DeliveryStatus; error?: string }> {
   const site = await getSiteConfig();
-  const template = await getTemplate(eventKey, channel) ?? (channel === 'sms' ? await getTemplate(eventKey, 'whatsapp') ?? await getTemplate(eventKey, 'email') : null);
+  const template = await getTemplate(eventKey, channel);
   if (!template) return { status: 'skipped', error: 'Modelo não encontrado para este evento e canal.' };
   const variables = {
     site_name: site.name, site_url: publicSiteUrl(), customer_name: 'Cliente GameAO', customer_email: to,
@@ -621,4 +650,140 @@ export async function sendTestNotification(eventKey: string, channel: Notificati
   if (channel === 'sms') return { status: await sendSms({ eventKey, to, body }) };
   await createAdminNotification({ title: `Teste de notificação: ${subject}`, message: body, level: 'info', eventKey });
   return { status: 'sent' };
+}
+
+export type NotificationJobPayload =
+  | { kind: 'dispatch'; input: DispatchInput }
+  | { kind: 'order_created'; order: NotificationOrder & { items?: Array<{ product_name: string; quantity: number; subtotal_aoa: number | string; player_id?: string | null; player_nickname?: string | null }> }; paymentInstructions: string }
+  | { kind: 'proof_submitted'; order: NotificationOrder }
+  | { kind: 'manual_email'; input: Parameters<typeof sendManualEmail>[0] }
+  | { kind: 'manual_sms'; input: Parameters<typeof sendManualSms>[0] }
+  | { kind: 'manual_order'; input: Parameters<typeof sendManualNotification>[0] }
+  | { kind: 'campaign_send'; campaignId: number };
+
+/** Persist the work before acknowledging the initiating HTTP request. */
+export async function enqueueNotificationJob(payload: NotificationJobPayload, connection?: DbConnection): Promise<string> {
+  const executor = connection ?? getPool();
+  const [rows] = await executor.query<any[]>(
+    `INSERT INTO notification_jobs (job_type, payload_json) VALUES (?, ?::jsonb) RETURNING id`,
+    [payload.kind, JSON.stringify(payload)],
+  );
+  return String(rows[0]?.id ?? '');
+}
+
+export async function getNotificationJobStatus(id: string): Promise<{ id: string; status: string; result: unknown; error: string | null } | null> {
+  const [rows] = await getPool().query<any[]>(`SELECT id, status, result_json, last_error FROM notification_jobs WHERE id = ? LIMIT 1`, [id]);
+  const row = rows[0];
+  if (!row) return null;
+  let result: unknown = row.result_json ?? null;
+  let error = row.last_error == null ? null : String(row.last_error);
+  if (typeof row.result_json === 'string') {
+    try { result = JSON.parse(row.result_json); }
+    catch { result = null; error ??= 'Não foi possível interpretar o resultado registado para este envio.'; }
+  }
+  return { id: String(row.id), status: String(row.status), result, error };
+}
+
+async function performNotificationJob(payload: NotificationJobPayload): Promise<unknown> {
+  if (payload.kind === 'dispatch') return dispatch(payload.input);
+  if (payload.kind === 'manual_email') return sendManualEmail(payload.input);
+  if (payload.kind === 'manual_sms') return sendManualSms(payload.input);
+  if (payload.kind === 'manual_order') return sendManualNotification(payload.input);
+  if (payload.kind === 'campaign_send') {
+    const [[campaign]] = await getPool().query<any[]>(`SELECT id, subject, body_html, audience_status, status FROM email_campaigns WHERE id = ? LIMIT 1`, [payload.campaignId]);
+    if (!campaign || campaign.audience_status !== 'subscribed' || campaign.status !== 'sending') throw new Error('A campanha deixou de estar elegível para envio.');
+    try {
+      const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = 'subscribed' ORDER BY id ASC LIMIT 5000`);
+      const result = await sendEmailCampaign({ campaignId: payload.campaignId, subject: String(campaign.subject), bodyHtml: String(campaign.body_html), leads });
+      const status = result.failedCount > 0 && result.sentCount === 0 ? 'failed' : 'sent';
+      await getPool().execute(`UPDATE email_campaigns SET status = ?, recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [status, result.recipientCount, result.sentCount, payload.campaignId]);
+      return { ...result, status };
+    } catch (error) {
+      await getPool().execute(`UPDATE email_campaigns SET status = 'failed', updated_at = NOW() WHERE id = ?`, [payload.campaignId]).catch(() => undefined);
+      throw error;
+    }
+  }
+  if (payload.kind === 'order_created') {
+    const variables = orderVariables(payload.order);
+    variables.payment_instructions = payload.paymentInstructions ? `<p>${escapeHtml(payload.paymentInstructions)}</p>` : '';
+    const [customer, admin] = await Promise.all([
+      dispatch({ eventKey: 'order.created', order: payload.order, variables, channels: ['email', 'whatsapp', 'sms', 'in_app'] }),
+      dispatch({ eventKey: 'admin.new_order', order: payload.order, variables, channels: ['in_app', 'email'], entityType: 'shop_order', entityId: payload.order.order_number }),
+    ]);
+    return { customer, admin };
+  }
+  const [customer, admin] = await Promise.all([
+    dispatch({ eventKey: 'order.payment_proof_submitted', order: { ...payload.order, status: 'payment_verification' }, channels: ['email', 'sms', 'in_app'] }),
+    dispatch({ eventKey: 'admin.payment_proof', order: payload.order, channels: ['in_app', 'email'], entityType: 'shop_order', entityId: payload.order.order_number }),
+  ]);
+  return { customer, admin };
+}
+
+function containsFailedDelivery(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsFailedDelivery);
+  if (typeof value === 'string') return ['failed', 'not_configured'].includes(value);
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.status === 'string' && ['failed', 'not_configured'].includes(record.status)) return true;
+  return Object.values(record).some(containsFailedDelivery);
+}
+
+let notificationWorkerStarted = false;
+let notificationWorkersActive = 0;
+
+async function processOneNotificationJob(): Promise<void> {
+  const connection = await getPool().getConnection();
+  let row: any;
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query<any[]>(`SELECT id, payload_json FROM notification_jobs WHERE status = 'queued' AND available_at <= NOW() ORDER BY created_at ASC, id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`);
+    row = rows[0];
+    if (!row) { await connection.commit(); return; }
+    await connection.execute(`UPDATE notification_jobs SET status = 'processing', attempts = attempts + 1, locked_at = NOW(), updated_at = NOW() WHERE id = ?`, [row.id]);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback().catch(() => undefined);
+    throw error;
+  } finally {
+    connection.release();
+  }
+  if (!row) return;
+
+  const heartbeat = setInterval(() => {
+    void getPool().execute(`UPDATE notification_jobs SET locked_at = NOW(), updated_at = NOW() WHERE id = ? AND status = 'processing'`, [row.id]).catch((error) => console.error('[notifications] falha no heartbeat do job', error instanceof Error ? error.message : error));
+  }, 60_000);
+  heartbeat.unref?.();
+  try {
+    const payload = (typeof row.payload_json === 'string' ? JSON.parse(row.payload_json) : row.payload_json) as NotificationJobPayload;
+    const result = await performNotificationJob(payload);
+    const failed = containsFailedDelivery(result);
+    const resultError = result && typeof result === 'object' && 'error' in result ? String((result as { error?: string }).error ?? '') : '';
+    await getPool().execute(`UPDATE notification_jobs SET status = ?, result_json = ?::jsonb, last_error = ?, locked_at = NULL, finished_at = NOW(), updated_at = NOW() WHERE id = ?`, [failed ? 'failed' : 'completed', JSON.stringify(result ?? {}), resultError || (failed ? 'Um ou mais canais falharam ou não estão configurados.' : null), row.id]);
+  } catch (error) {
+    const reason = (error instanceof Error ? error.message : 'Falha ao processar notificação.').slice(0, 1000);
+    await getPool().execute(`UPDATE notification_jobs SET status = 'failed', last_error = ?, locked_at = NULL, finished_at = NOW(), updated_at = NOW() WHERE id = ?`, [reason, row.id]).catch((updateError) => console.error('[notifications] falha ao guardar resultado do job', updateError instanceof Error ? updateError.message : updateError));
+    console.error('[notifications] job falhou', reason);
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+export function startNotificationWorker(): void {
+  if (notificationWorkerStarted) return;
+  notificationWorkerStarted = true;
+  let lastStaleCheck = 0;
+  const timer = setInterval(() => {
+    if (notificationWorkersActive < 4) {
+      const slots = 4 - notificationWorkersActive;
+      notificationWorkersActive += slots;
+      void Promise.all(Array.from({ length: slots }, () => processOneNotificationJob().catch((error) => {
+        console.error('[notifications] worker indisponível', error instanceof Error ? error.message : error);
+      }).finally(() => { notificationWorkersActive -= 1; })));
+    }
+    if (Date.now() - lastStaleCheck > 60_000) {
+      lastStaleCheck = Date.now();
+      void getPool().execute(`UPDATE notification_jobs SET status = 'failed', last_error = 'O processo foi interrompido antes de confirmar o resultado; verifique o histórico do provedor antes de reenviar.', locked_at = NULL, finished_at = NOW(), updated_at = NOW() WHERE status = 'processing' AND locked_at < NOW() - INTERVAL '5 minutes'`).catch((error) => console.error('[notifications] falha ao limpar jobs interrompidos', error instanceof Error ? error.message : error));
+    }
+  }, 500);
+  timer.unref?.();
 }

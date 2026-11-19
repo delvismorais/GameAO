@@ -162,3 +162,12 @@
 - [x] Criar envio manual de email para selecionar um modelo, personalizar o conteúdo, definir assunto, escolher um destinatário individual ou envio em massa e pré-visualizar antes do envio. Está acessível em **Notificações** e em **Marketing → Campanhas**. O envio em massa é restrito a contatos com subscrição ativa, limitado a 5.000 destinatários e exige confirmação antes de enviar.
 - [x] Criar envio manual de SMS com campo de número de destino, campo de mensagem, ação de envio, validação de número e registo do estado da entrega, sem expor a chave TelcoSMS. Acesso disponível em Notificações e por atalho em Marketing → Campanhas.
 - [x] O painel permanece responsivo, mostra estados claros e separa composição, pré-visualização e confirmação de envio. Nenhum email ou SMS foi enviado durante a implementação; não houve escrita no banco compartilhado.
+
+
+## 21. Fiabilidade de notificações, comprovativos e faturas — novembro de 2026
+
+- [x] Emails manuais e automáticos para compra, contacto, submissão de comprovativo e atualização/revisão de encomenda devem ser enfileirados de forma persistente, devolver resposta rápida ao navegador e ter estado final consultável, sem ficar indefinidamente em “A enviar…”. Campos personalizados como nome, email, telefone e dados do pedido devem ser interpolados corretamente.
+- [x] A entrega automática e manual de SMS deve usar modelos editáveis por evento, com seleção/pré-visualização no compositor manual e personalização de variáveis; o SMS deve ser processado independentemente de SMTP lento e o resultado precisa distinguir fila, sucesso e falha.
+- [x] Ao enviar comprovativo, depois de arquivo e estado serem persistidos, a interface deve mostrar confirmação sem aguardar SMS/email nem atualização secundária, e falhas de notificação não podem transformar uma submissão já guardada em erro aparente que incentive reenvio.
+- [x] As duas faturas PDF devem mostrar cabeçalho e contactos atuais da GameAO, dados do cliente, itens e valores legíveis, totais corretos, quebras de página sem sobreposições/cortes e rodapé dentro da página; nenhuma imagem remota ou caminho arbitrário deve ser embutido no PDF.
+- [x] Validar com testes locais/fixtures sem mensagem real, sem encomenda/comprovativo real e sem operações de escrita na base de produção; executar typecheck/build e inspecionar os PDFs gerados localmente.

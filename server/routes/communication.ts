@@ -15,9 +15,8 @@ import {
   notifyPasswordReset,
   publicSiteUrl,
   normalizePhone,
-  sendManualNotification,
-  sendManualEmail,
-  sendManualSms,
+  enqueueNotificationJob,
+  getNotificationJobStatus,
   sendTestNotification,
   smsConfigured,
   whatsappConfigured,
@@ -85,7 +84,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     const message = text(request.body?.message, 5000);
     if (name.length < 2 || !validEmail(email) || message.length < 5) { response.status(400).json({ error: 'invalid_contact', message: 'Indique nome, email válido e mensagem.' }); return; }
     await getPool().execute(`INSERT INTO contact_messages (name, email, phone, subject, message) VALUES (?, ?, ?, ?, ?)`, [name, email.toLowerCase(), phone || null, subject || 'Contacto do site', message]);
-    await notifyContactMessage({ name, email: email.toLowerCase(), message });
+    await notifyContactMessage({ name, email: email.toLowerCase(), message }).catch((error) => console.error('[notifications] contacto guardado; falha ao enfileirar alerta', error instanceof Error ? error.message : error));
     response.status(201).json({ ok: true, message: 'Mensagem enviada. A equipa GameAO responderá em breve.' });
   }));
 
@@ -126,11 +125,9 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
       const token = randomBytes(32).toString('hex');
       await getPool().execute(`DELETE FROM password_reset_tokens WHERE user_id = ?`, [rows[0].id]);
       await getPool().execute(`INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, NOW() + INTERVAL '60 minutes')`, [sha256(token), rows[0].id]);
-      const result = await notifyPasswordReset({ id: Number(rows[0].id), name: rows[0].name, email: rows[0].email, phone: rows[0].phone }, token);
-      response.json({ ok: true, message: result.email === 'sent' ? 'Enviámos um email com o link de recuperação.' : 'O serviço de email ainda não está configurado. Contacte geral@gameao.shop para recuperar a palavra-passe.', delivered: result.email === 'sent' });
-      return;
+      await notifyPasswordReset({ id: Number(rows[0].id), name: rows[0].name, email: rows[0].email, phone: rows[0].phone }, token);
     }
-    response.json({ ok: true, message: 'Se o email existir, receberá um link de recuperação.', delivered: false });
+    response.json({ ok: true, message: 'Se o email existir, receberá um link de recuperação.', queued: Boolean(rows[0]) });
   }));
 
   app.post('/api/auth/reset-password', wrap(async (request, response) => {
@@ -365,9 +362,10 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (channel === 'email' && !validEmail(recipient)) { response.status(400).json({ error: 'invalid_recipient', message: 'Indique um email válido para esta notificação.' }); return; }
     if ((channel === 'sms' || channel === 'whatsapp') && !/^2449\d{8}$/.test(normalizePhone(recipient))) { response.status(400).json({ error: 'invalid_recipient', message: 'Indique um número angolano válido com 9 dígitos.' }); return; }
     const [items] = await getPool().query<any[]>(`SELECT product_name, quantity, subtotal_aoa, player_id, player_nickname FROM shop_order_items WHERE order_id = ? ORDER BY id ASC LIMIT 100`, [order.id]);
-    const result = await sendManualNotification({ eventKey: text(request.body?.eventKey, 80) || 'admin.manual_order', channel, order: { ...order, items }, recipient: recipient || null, subject, body });
-    await deps.recordAudit(admin.id, 'notification.manual_send', 'shop_order', String(order.id), { orderNumber, channel, status: result.status });
-    response.status(result.status === 'sent' ? 200 : 422).json({ ok: result.status === 'sent', ...result });
+    const input = { eventKey: text(request.body?.eventKey, 80) || 'admin.manual_order', channel, order: { ...order, items }, recipient: recipient || null, subject, body };
+    const jobId = await enqueueNotificationJob({ kind: 'manual_order', input });
+    await deps.recordAudit(admin.id, 'notification.manual_send', 'shop_order', String(order.id), { orderNumber, channel, status: 'queued', jobId });
+    response.status(202).json({ ok: true, queued: true, jobId });
   }));
 
   app.get('/api/admin/email/audience-count', wrap(async (request, response) => {
@@ -386,22 +384,34 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     const body = text(request.body?.body, 20000);
     const customerName = text(request.body?.customerName, 160);
     if (!validEmail(to) || !subject || !body) { response.status(400).json({ error: 'invalid_manual_email', message: 'Indique um destinatário válido, assunto e conteúdo.' }); return; }
-    const result = await sendManualEmail({ eventKey, to, customerName, subject, body });
-    await deps.recordAudit(admin.id, 'notification.manual_send', 'notification', eventKey, { channel: 'email', status: result.status });
-    response.status(result.status === 'sent' ? 200 : result.status === 'not_configured' ? 503 : 422).json({ ok: result.status === 'sent', ...result });
+    const jobId = await enqueueNotificationJob({ kind: 'manual_email', input: { eventKey, to, customerName, subject, body } });
+    await deps.recordAudit(admin.id, 'notification.manual_send', 'notification', eventKey, { channel: 'email', status: 'queued', jobId });
+    response.status(202).json({ ok: true, queued: true, jobId });
   }));
 
   app.post('/api/admin/sms/manual', wrap(async (request, response) => {
     if (!deps.requireDatabase(response)) return;
     const admin = await deps.requireAdmin(request, response); if (!admin) return;
     const to = text(request.body?.to, 40);
-    const message = text(request.body?.message, 1000);
+    const message = text(request.body?.message, 500);
     const normalized = normalizePhone(to);
     if (!/^2449\d{8}$/.test(normalized)) { response.status(400).json({ error: 'invalid_recipient', message: 'Indique um número angolano válido, com 9 dígitos ou indicativo +244.' }); return; }
-    if (!message || message.length > 160) { response.status(400).json({ error: 'invalid_message', message: 'A mensagem deve ter entre 1 e 160 caracteres.' }); return; }
-    const result = await sendManualSms({ to: normalized, body: message });
-    await deps.recordAudit(admin.id, 'notification.manual_send', 'notification', 'admin.manual_sms', { channel: 'sms', status: result.status });
-    response.status(result.status === 'sent' ? 200 : result.status === 'not_configured' ? 503 : 422).json({ ok: result.status === 'sent', ...result });
+    if (!message) { response.status(400).json({ error: 'invalid_message', message: 'Escreva o conteúdo do SMS.' }); return; }
+    const eventKey = text(request.body?.eventKey, 80) || 'admin.manual_sms';
+    const input = { to: normalized, body: message, eventKey, customerName: text(request.body?.customerName, 160), customerEmail: text(request.body?.customerEmail, 255), orderNumber: text(request.body?.orderNumber, 80), orderTotal: request.body?.orderTotal, orderStatus: text(request.body?.orderStatus, 80) };
+    const jobId = await enqueueNotificationJob({ kind: 'manual_sms', input });
+    await deps.recordAudit(admin.id, 'notification.manual_send', 'notification', eventKey, { channel: 'sms', status: 'queued', jobId });
+    response.status(202).json({ ok: true, queued: true, jobId });
+  }));
+
+  app.get('/api/admin/notification-jobs/:id', wrap(async (request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    if (!await deps.requireAdmin(request, response)) return;
+    const id = text(request.params.id, 32);
+    if (!/^\d+$/.test(id)) { response.status(400).json({ error: 'invalid_job_id', message: 'Identificador de tarefa inválido.' }); return; }
+    const job = await getNotificationJobStatus(id);
+    if (!job) { response.status(404).json({ error: 'job_not_found', message: 'Envio não encontrado.' }); return; }
+    response.json({ job });
   }));
 
   app.get('/api/admin/notification-deliveries', wrap(async (request, response) => {

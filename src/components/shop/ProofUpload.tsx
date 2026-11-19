@@ -73,7 +73,8 @@ export function ProofUpload({ orderNumber, email, token, onUploaded }: { orderNu
         setMessage(data?.message ?? 'Comprovativo recebido. A equipa GameAO vai verificar o documento.');
         setFile(null);
         if (input.current) input.current.value = '';
-        await onUploaded?.();
+        setBusy(false);
+        if (onUploaded) void Promise.resolve().then(onUploaded).catch((error) => console.warn('[proof-upload] atualização secundária falhou', error));
       } else {
         setTone('error');
         setMessage(data?.message ?? 'Não foi possível enviar o comprovativo. Tente novamente.');
