@@ -210,14 +210,36 @@ async function sendEmail(input: { eventKey: string; to: string; subject: string;
     return 'not_configured';
   }
   try {
-    const info = await getTransporter().sendMail({
-      from: process.env.SMTP_FROM || process.env.EMAIL_FROM || input.site.email,
-      to: input.to,
-      subject: input.subject,
-      text: input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
-      html: emailLayout(input.body, input.subject, input.site),
-    });
-    await logDelivery({ eventKey: input.eventKey, channel: 'email', recipient: input.to, status: 'sent', subject: input.subject, providerMessageId: info.messageId, userId: input.userId, orderId: input.orderId });
+    const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || input.site.email;
+    const text = input.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const html = emailLayout(input.body, input.subject, input.site);
+    const smtpHost = (process.env.SMTP_HOST || process.env.EMAIL_HOST || '').trim().toLowerCase();
+    let providerMessageId: string;
+
+    if (smtpHost === 'smtp.resend.com') {
+      // Render Free blocks outbound SMTP ports (25/465/587); Resend accepts the same API key over HTTPS.
+      const apiKey = process.env.SMTP_PASSWORD || process.env.EMAIL_PASS;
+      if (!apiKey) throw new Error('Chave API do Resend não configurada.');
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to: [input.to], subject: input.subject, text, html }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const responseText = await response.text();
+      let result: { id?: string; message?: string; name?: string; error?: string } = {};
+      try { result = JSON.parse(responseText) as typeof result; } catch { /* preserve HTTP status in the diagnostic below */ }
+      if (!response.ok) {
+        throw new Error(`Resend API HTTP ${response.status}: ${result.message || result.error || result.name || responseText.slice(0, 300) || 'erro sem detalhe'}`);
+      }
+      if (!result.id) throw new Error('Resend API aceitou a chamada sem devolver o identificador da mensagem.');
+      providerMessageId = result.id;
+    } else {
+      const info = await getTransporter().sendMail({ from, to: input.to, subject: input.subject, text, html });
+      providerMessageId = info.messageId;
+    }
+
+    await logDelivery({ eventKey: input.eventKey, channel: 'email', recipient: input.to, status: 'sent', subject: input.subject, providerMessageId, userId: input.userId, orderId: input.orderId });
     return 'sent';
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Falha no envio SMTP.';
