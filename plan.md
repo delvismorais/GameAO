@@ -31,6 +31,15 @@ Esta fase mantém o shell administrativo próprio do GameAO e usa a demonstraç�
 - **Campanhas em massa**: o fluxo de campanhas de email continua baseado em leads subscritos, ganha variáveis por destinatário, confirmação explícita antes do envio e o mesmo registo de entrega usado pelas mensagens transacionais.
 - **Segurança operacional**: todas as rotas exigem administrador, usam queries parametrizadas, limitam o tamanho dos payloads e não expõem credenciais. Falhas de provedor não interrompem a encomenda nem são apresentadas como sucesso.
 
+### Biblioteca de emails e envio manual — implementação atual
+
+- A biblioteca contém 17 categorias: Agradecimento, Aniversário, Anúncio, Boas-vindas, Confirmação, Feedback, Lançamento, Lembrete, Notificação, Novo produto, Oferta especial, Onboarding, Post de blog, Progresso, Reengajamento, Saudação e Venda. Os textos originais ficam uma só vez em `notification_templates`; o compositor manual seleciona esses mesmos registros e o editor permite associar qualquer modelo de email a um evento automático existente.
+- `automatic_event_key` é opcional. Quando atribuído, o motor de notificações prioriza o modelo ativo associado a esse evento e mantém intacto o modelo legado específico do evento como alternativa; o modelo Boas-vindas fica associado por omissão a `user.welcome`.
+- Os modelos de email serão responsivos e incluirão o logo, uma imagem existente do catálogo GameAO, preheader, CTA, slogan, contactos e assinatura. `emailLayout()` será o wrapper comum para conservar a identidade da marca.
+- O envio manual permitirá escolher um modelo e personalizar assunto/conteúdo, com destinatário individual ou envio em massa para contatos subscritos. O envio em massa manterá a restrição de consentimento, o limite de 5.000 destinatários, a confirmação explícita e o registo de entregas já usados pelas campanhas. O acesso está disponível em Notificações e em Marketing → Campanhas, com atalhos para email manual e SMS.
+- O envio SMS manual terá número de destino, mensagem, validação angolana e envio pelo adaptador TelcoSMS existente, sem expor credenciais.
+- A referência Brevo servirá apenas para padrões genéricos de responsividade, campos dinâmicos, pré-visualização e CTA claro. A página antiga Morásio servirá apenas para inspirar organização em secções/cartões; não serão copiados código, modelos proprietários nem listas de contatos.
+
 ## 3. Stack e arquitetura
 
 - **React 19 + TypeScript + Vite 7 + React Router 7**, mantendo os componentes e CSS existentes. O backend será servido pelo mesmo projeto através do servidor Webdev; a base de dados MySQL gerida será a fonte de verdade para utilizadores, produtos, conteúdos, carrinho, encomendas, pagamentos, notificações e auditoria. O `localStorage` fica apenas como apoio transitório/offline e não substitui os dados comerciais persistentes.

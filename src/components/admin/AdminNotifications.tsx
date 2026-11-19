@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { AdminIcon } from './AdminIcon';
+import { ManualEmail, ManualSms } from './ManualCommunication';
 import { AdminSection, Badge, Empty, Field, Modal, Notice, StatusBadge, Tabs, api, formatDate, formatKz, useJson } from './ui';
 
 type AdminAlert = { id: number; title: string; message: string; level: string; link?: string; is_read: number; created_at: string; event_key?: string };
-type Template = { id: number; event_key: string; channel: string; name: string; subject: string; body: string; is_active: number };
+type Template = { id: number; event_key: string; automatic_event_key?: string | null; channel: string; name: string; subject: string; body: string; is_active: number };
 type Delivery = { id: number; event_key: string; channel: string; recipient: string; status: string; subject?: string; error_message?: string; order_number?: string; created_at: string };
 type OrderLookup = {
   order: { id: number; order_number: string; user_id?: number | null; customer_name: string; customer_email: string; customer_phone?: string | null; total_aoa: number; status: string; payment_status: string; payment_method?: string | null; created_at: string };
@@ -11,7 +12,7 @@ type OrderLookup = {
   notifications: Delivery[];
 };
 type Campaign = { id: number; name: string; subject: string; body_html: string; body_text: string; audience_status: string; status: string; recipient_count: number; sent_count: number; created_at: string; sent_at?: string | null };
-type Tab = 'alerts' | 'templates' | 'deliveries' | 'manual' | 'campaigns' | 'test';
+type Tab = 'alerts' | 'templates' | 'deliveries' | 'manual' | 'manual-email' | 'manual-sms' | 'campaigns' | 'test';
 
 const CHANNELS = [
   { id: 'email', label: 'Email', icon: 'mail' },
@@ -21,7 +22,7 @@ const CHANNELS = [
 ] as const;
 const VARIABLES = ['{{site_name}}', '{{site_url}}', '{{site_email}}', '{{site_phone}}', '{{customer_name}}', '{{customer_email}}', '{{customer_phone}}', '{{order_number}}', '{{order_total}}', '{{order_status}}', '{{order_items}}', '{{order_link}}', '{{payment_method}}', '{{payment_instructions}}', '{{admin_link}}', '{{reset_link}}', '{{affiliate_code}}', '{{commission_rate}}', '{{commission}}', '{{payout_amount}}', '{{admin_note}}'];
 const DEFAULT_BODY = '<p>Olá {{customer_name}},</p><p>Temos uma atualização sobre a encomenda <strong>{{order_number}}</strong>.</p><p>Equipa {{site_name}}</p>';
-const EMPTY_TEMPLATE: Template = { id: 0, event_key: 'order.created', channel: 'email', name: '', subject: '', body: DEFAULT_BODY, is_active: 1 };
+const EMPTY_TEMPLATE: Template = { id: 0, event_key: 'order.created', automatic_event_key: null, channel: 'email', name: '', subject: '', body: DEFAULT_BODY, is_active: 1 };
 
 function channelLabel(channel: string): string { return CHANNELS.find((item) => item.id === channel)?.label ?? channel; }
 function previewTemplate(body: string): string {
@@ -41,12 +42,14 @@ function previewTemplate(body: string): string {
 
 export function AdminNotifications({ initialTab = 'alerts' }: { initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
-  return <AdminSection title="Centro de comunicação" subtitle="Procure encomendas, componha mensagens manuais, edite modelos e acompanhe email, SMS, WhatsApp e notificações internas." actions={<Tabs tabs={[{ id: 'alerts', label: 'Alertas' }, { id: 'manual', label: 'Enviar por encomenda' }, { id: 'templates', label: 'Modelos' }, { id: 'deliveries', label: 'Entregas' }, { id: 'campaigns', label: 'Envio em massa' }, { id: 'test', label: 'Teste' }]} active={tab} onChange={(id) => setTab(id as Tab)} />}>
+  return <AdminSection title="Centro de comunicação" subtitle="Procure encomendas, componha mensagens manuais, edite modelos e acompanhe email, SMS, WhatsApp e notificações internas." actions={<Tabs tabs={[{ id: 'alerts', label: 'Alertas' }, { id: 'manual', label: 'Por encomenda' }, { id: 'manual-email', label: 'Email manual' }, { id: 'manual-sms', label: 'SMS manual' }, { id: 'templates', label: 'Modelos' }, { id: 'deliveries', label: 'Entregas' }, { id: 'campaigns', label: 'Campanhas' }, { id: 'test', label: 'Teste' }]} active={tab} onChange={(id) => setTab(id as Tab)} />}>
     {tab === 'alerts' && <Alerts />}
     {tab === 'manual' && <ManualSender />}
+    {tab === 'manual-email' && <ManualEmail />}
+    {tab === 'manual-sms' && <ManualSms />}
     {tab === 'templates' && <Templates />}
     {tab === 'deliveries' && <Deliveries />}
-    {tab === 'campaigns' && <Campaigns />}
+    {tab === 'campaigns' && <Campaigns onOpenEmail={() => setTab('manual-email')} onOpenSms={() => setTab('manual-sms')} />}
     {tab === 'test' && <TestSender />}
   </AdminSection>;
 }
@@ -70,8 +73,9 @@ function Templates() {
   const [message, setMessage] = useState('');
   const [tone, setTone] = useState<'success' | 'error'>('success');
   const grouped = useMemo(() => { const map = new Map<string, Template[]>(); for (const template of data?.templates ?? []) { const list = map.get(template.event_key) ?? []; list.push(template); map.set(template.event_key, list); } return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])); }, [data]);
+  const automaticEvents = useMemo(() => [...new Set((data?.templates ?? []).map((template) => template.event_key).filter((eventKey) => !eventKey.startsWith('email.template.')))].sort(), [data]);
   const save = async (template: Template) => {
-    const payload = { eventKey: template.event_key, channel: template.channel, name: template.name, subject: template.subject, body: template.body, isActive: Boolean(template.is_active) };
+    const payload = { eventKey: template.event_key, automaticEventKey: template.automatic_event_key ?? '', channel: template.channel, name: template.name, subject: template.subject, body: template.body, isActive: Boolean(template.is_active) };
     const result = template.id ? await api(`/api/admin/notification-templates/${template.id}`, { method: 'PUT', body: JSON.stringify(payload) }) : await api('/api/admin/notification-templates', { method: 'POST', body: JSON.stringify(payload) });
     setMessage(result.ok ? 'Modelo guardado.' : result.error ?? 'Falha ao guardar.'); setTone(result.ok ? 'success' : 'error'); if (result.ok) { setEditing(null); await reload(); }
   };
@@ -80,11 +84,12 @@ function Templates() {
     <div className="admin-section__inline-actions"><button type="button" className="btn btn--primary btn--sm" onClick={() => setEditing({ ...EMPTY_TEMPLATE })}>Novo modelo</button></div>
     <Notice message={message} tone={tone} />
     <p className="admin-message">Variáveis disponíveis: {VARIABLES.join(' · ')}</p>
-    {loading ? <p className="admin-state">A carregar modelos…</p> : <div className="admin-template-list">{grouped.map(([eventKey, templates]) => <article key={eventKey}><header><strong>{eventKey}</strong><div>{templates.map((template) => <Badge key={template.id} tone={template.is_active ? 'success' : 'muted'}>{channelLabel(template.channel)}{template.is_active ? '' : ' · inativo'}</Badge>)}</div></header><div className="admin-template-list__rows">{templates.map((template) => <div className="admin-template-row" key={template.id}><button type="button" onClick={() => setEditing(template)}><span>{template.name}</span><small>{template.subject || template.body.slice(0, 100)}</small><em>Editar</em></button><button type="button" className="admin-link admin-template-row__delete" onClick={() => void remove(template)}>Eliminar</button></div>)}</div></article>)}</div>}
+    {loading ? <p className="admin-state">A carregar modelos…</p> : <div className="admin-template-list">{grouped.map(([eventKey, templates]) => <article key={eventKey}><header><strong>{eventKey}</strong><div>{templates.map((template) => <Badge key={template.id} tone={template.is_active ? 'success' : 'muted'}>{channelLabel(template.channel)}{template.is_active ? '' : ' · inativo'}</Badge>)}</div></header><div className="admin-template-list__rows">{templates.map((template) => <div className="admin-template-row" key={template.id}><button type="button" onClick={() => setEditing(template)}><span>{template.name}</span><small>{template.automatic_event_key ? `Automático: ${template.automatic_event_key} · ` : ''}{template.subject || template.body.slice(0, 100)}</small><em>Editar</em></button><button type="button" className="admin-link admin-template-row__delete" onClick={() => void remove(template)}>Eliminar</button></div>)}</div></article>)}</div>}
     <Modal open={Boolean(editing)} title={editing ? `${editing.id ? 'Editar' : 'Novo'} modelo de comunicação` : ''} onClose={() => setEditing(null)} wide>
       {editing && <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void save(editing); }}>
         <div className="form-row"><Field label="Evento *"><input required value={editing.event_key} disabled={Boolean(editing.id)} onChange={(event) => setEditing({ ...editing, event_key: event.target.value })} placeholder="order.processing" /></Field><Field label="Canal *"><select value={editing.channel} disabled={Boolean(editing.id)} onChange={(event) => setEditing({ ...editing, channel: event.target.value })}>{CHANNELS.map((channel) => <option key={channel.id} value={channel.id}>{channel.label}</option>)}</select></Field></div>
         <Field label="Nome"><input value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} placeholder="Atualização de encomenda" /></Field>
+        {editing.channel === 'email' && <Field label="Evento automático (opcional)" hint="Ao ocorrer este evento, o motor de notificações usa este modelo em vez do modelo email diretamente associado ao evento."><select value={editing.automatic_event_key ?? ''} onChange={(event) => setEditing({ ...editing, automatic_event_key: event.target.value || null })}><option value="">Não associar a um evento automático</option>{automaticEvents.map((eventKey) => <option key={eventKey} value={eventKey}>{eventKey}</option>)}</select></Field>}
         <Field label="Assunto / título"><input value={editing.subject} onChange={(event) => setEditing({ ...editing, subject: event.target.value })} placeholder="Atualização da encomenda {{order_number}}" /></Field>
         <Field label="Conteúdo" hint={`Variáveis: ${VARIABLES.join(' ')}`}><textarea rows={10} value={editing.body} onChange={(event) => setEditing({ ...editing, body: event.target.value })} /></Field>
         <label className="admin-check"><input type="checkbox" checked={Boolean(editing.is_active)} onChange={(event) => setEditing({ ...editing, is_active: event.target.checked ? 1 : 0 })} /> Modelo ativo</label>
@@ -153,7 +158,7 @@ function Deliveries() {
   </div>;
 }
 
-function Campaigns() {
+function Campaigns({ onOpenEmail, onOpenSms }: { onOpenEmail: () => void; onOpenSms: () => void }) {
   const { data, loading, reload } = useJson<{ campaigns: Campaign[] }>('/api/admin/email/campaigns');
   const [form, setForm] = useState({ name: '', subject: '', bodyHtml: '', bodyText: '', audienceStatus: 'subscribed' });
   const [topic, setTopic] = useState('');
@@ -163,6 +168,7 @@ function Campaigns() {
   const save = async () => { setBusy(true); const result = await api('/api/admin/email/campaigns', { method: 'POST', body: JSON.stringify(form) }); setBusy(false); setMessage(result.ok ? { tone: 'success', text: 'Campanha guardada como rascunho.' } : { tone: 'error', text: result.error ?? 'Falha ao guardar campanha.' }); if (result.ok) { setForm({ name: '', subject: '', bodyHtml: '', bodyText: '', audienceStatus: 'subscribed' }); await reload(); } };
   const send = async (campaign: Campaign) => { if (!window.confirm(`Enviar “${campaign.name}” para todos os leads ${campaign.audience_status === 'subscribed' ? 'subscritos' : campaign.audience_status}?`)) return; setBusy(true); const result = await api(`/api/admin/email/campaigns/${campaign.id}/send`, { method: 'POST' }); setBusy(false); setMessage(result.ok ? { tone: 'success', text: `Campanha processada: ${String((result.data as { sentCount?: number }).sentCount ?? 0)} enviados.` } : { tone: 'error', text: result.error ?? 'Falha no envio.' }); if (result.ok) await reload(); };
     return <div className="admin-campaign-workspace">
+    <div className="admin-section__inline-actions"><button type="button" className="btn btn--outline btn--sm" onClick={onOpenEmail}>Compor email com os 17 modelos</button><button type="button" className="btn btn--outline btn--sm" onClick={onOpenSms}>Abrir envio manual de SMS</button></div>
     <div className="admin-campaign-intro"><div><p className="page-kicker">Campanhas GameAO</p><h3>Envio em massa com revisão antes de enviar</h3><p>O público desta fase é composto por leads com subscrição ativa. Cada email usa o nome do destinatário e fica no histórico de entregas.</p></div><Badge tone="warning">SMTP obrigatório</Badge></div>
     <Notice message={message?.text} tone={message?.tone === 'warning' ? 'warning' : message?.tone === 'error' ? 'error' : 'success'} />
     <div className="admin-communication-grid"><section className="admin-communication-panel"><div className="admin-card__head"><div><h3>Nova campanha</h3><p className="admin-card__subhead">Guarde como rascunho e só depois confirme o envio.</p></div></div><div className="admin-form"><Field label="Tema para rascunho assistido"><div className="admin-inline-composer"><input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Ex.: novas recargas PlayStation" /><button type="button" className="btn btn--outline btn--sm" onClick={() => void generate()} disabled={busy}>Preencher</button></div></Field><Field label="Nome interno *"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Campanha de novembro" /></Field><Field label="Assunto *"><input value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="Novidades GameAO para si" /></Field><Field label="Audiência"><select value={form.audienceStatus} disabled><option value="subscribed">Leads subscritos</option></select></Field><Field label="HTML da campanha *" hint="Variáveis suportadas: {{customer_name}} {{customer_email}} {{site_name}} {{site_url}}"><textarea rows={10} value={form.bodyHtml} onChange={(event) => setForm({ ...form, bodyHtml: event.target.value })} placeholder="<p>Olá {{customer_name}},</p>" /></Field><Field label="Texto alternativo"><textarea rows={4} value={form.bodyText} onChange={(event) => setForm({ ...form, bodyText: event.target.value })} /></Field><div className="admin-form__actions"><button type="button" className="btn btn--primary" onClick={() => void save()} disabled={busy || !form.name || !form.subject || !form.bodyHtml}>Guardar rascunho</button><button type="button" className="btn btn--outline" onClick={() => setForm({ ...form, subject: '', bodyHtml: '', bodyText: '' })}>Limpar</button></div></div></section><section className="admin-communication-panel"><div className="admin-card__head"><div><h3>Pré-visualização</h3><p className="admin-card__subhead">Exemplo com Cliente GameAO. As variáveis são personalizadas por destinatário no servidor.</p></div></div><iframe className="admin-campaign-preview" title="Pré-visualização da campanha" sandbox="" srcDoc={form.bodyHtml ? previewTemplate(form.bodyHtml) : '<p style="font-family:Arial;padding:24px;color:#7d8893">O rascunho aparecerá aqui.</p>'} /></section></div>

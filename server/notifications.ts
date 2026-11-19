@@ -145,21 +145,33 @@ function getTransporter(): Transporter {
 export function emailLayout(content: string, title: string, site: SiteConfig): string {
   const base = publicSiteUrl();
   const logo = `${base}/assets/gameao-logo.png`;
+  const tagline = site.tagline?.trim() || 'A sua loja de videojogos em Angola.';
+  const phoneDigits = normalizePhone(site.whatsapp || site.phone);
+  const emailHref = `mailto:${site.email.trim()}`;
+  const phoneHref = phoneDigits ? `tel:+${phoneDigits}` : `tel:${encodeURIComponent(site.phone)}`;
+  const whatsappHref = phoneDigits ? `https://wa.me/${phoneDigits}` : '';
   return `<!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title></head>
 <body style="margin:0;padding:0;background:#eff2fa;font-family:Rubik,Arial,Helvetica,sans-serif;color:#182028;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eff2fa;padding:28px 12px;"><tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:6px;overflow:hidden;box-shadow:0 12px 30px rgba(8,16,24,.12);">
-<tr><td style="background:#00080f;padding:22px 28px;"><a href="${base}" style="text-decoration:none;display:inline-block;"><img src="${logo}" alt="${escapeHtml(site.name)}" width="150" height="58" style="display:block;border:0;"></a></td></tr>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eff2fa;padding:24px 10px;"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 12px 30px rgba(8,16,24,.12);">
+<tr><td style="background:#00080f;padding:20px 24px;"><a href="${escapeHtml(base)}" style="text-decoration:none;display:inline-block;"><img src="${escapeHtml(logo)}" alt="${escapeHtml(site.name)}" width="150" height="58" style="display:block;width:150px;max-width:100%;height:auto;border:0;"></a></td></tr>
 <tr><td style="height:4px;background:#cd3d0f;font-size:0;line-height:0;">&nbsp;</td></tr>
 <tr><td style="padding:30px 28px 24px;font-size:15px;line-height:1.65;color:#3c4852;">${content}</td></tr>
 <tr><td style="padding:20px 28px;background:#f7f8fa;border-top:1px solid #e6e9ef;font-size:12px;line-height:1.6;color:#7d8893;">
 <p style="margin:0 0 6px;font-weight:700;color:#182028;">${escapeHtml(site.name)}</p>
-<p style="margin:0;">${escapeHtml(site.email)} · ${escapeHtml(site.phone)} · ${escapeHtml(site.location)}</p>
-<p style="margin:8px 0 0;">Este email foi enviado automaticamente. Se não reconhece a operação, contacte-nos.</p>
+<p style="margin:0 0 8px;">${escapeHtml(tagline)}</p>
+<p style="margin:0;"><a href="${escapeHtml(emailHref)}" style="color:#cd3d0f;text-decoration:none;">${escapeHtml(site.email)}</a> · <a href="${escapeHtml(phoneHref)}" style="color:#cd3d0f;text-decoration:none;">${escapeHtml(site.phone)}</a>${whatsappHref ? ` · <a href="${escapeHtml(whatsappHref)}" style="color:#cd3d0f;text-decoration:none;">WhatsApp</a>` : ''} · ${escapeHtml(site.location)}</p>
+<p style="margin:14px 0 0;color:#3c4852;">Atenciosamente,<br><strong>Equipe ${escapeHtml(site.name)}</strong></p>
+<p style="margin:10px 0 0;">Este email foi enviado automaticamente. Se não reconhecer a operação, fale com a nossa equipe.</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 
 async function getTemplate(eventKey: string, channel: NotificationChannel): Promise<{ subject: string; body: string } | null> {
+  if (channel === 'email') {
+    const [automatedRows] = await getPool().query<any[]>(`SELECT subject, body FROM notification_templates WHERE automatic_event_key = ? AND channel = 'email' AND is_active = 1 LIMIT 1`, [eventKey]);
+    const automatedRow = automatedRows[0];
+    if (automatedRow) return { subject: String(automatedRow.subject ?? ''), body: String(automatedRow.body ?? '') };
+  }
   const [rows] = await getPool().query<any[]>(`SELECT subject, body FROM notification_templates WHERE event_key = ? AND channel = ? AND is_active = 1 LIMIT 1`, [eventKey, channel]);
   const row = rows[0];
   return row ? { subject: String(row.subject ?? ''), body: String(row.body ?? '') } : null;
@@ -448,6 +460,51 @@ export async function sendManualNotification(input: {
     status = 'skipped';
   }
   return { status, error: statusError(status, input.channel) };
+}
+
+export async function sendManualEmail(input: {
+  eventKey?: string;
+  to: string;
+  customerName?: string | null;
+  subject: string;
+  body: string;
+}): Promise<{ status: DeliveryStatus; error?: string }> {
+  const site = await getSiteConfig();
+  const to = input.to.trim().toLowerCase();
+  const variables: Record<string, string | number | null | undefined> = {
+    site_name: site.name,
+    site_url: publicSiteUrl(),
+    site_email: site.email,
+    site_phone: site.phone,
+    customer_name: input.customerName?.trim() || 'cliente',
+    customer_email: to,
+    customer_phone: '',
+    order_number: '',
+    order_total: '',
+    order_status: '',
+    order_items: '',
+    order_link: publicSiteUrl(),
+    admin_link: `${publicSiteUrl()}/admin`,
+  };
+  const subject = renderTemplate(input.subject, variables) || `Mensagem da ${site.name}`;
+  const body = renderTemplate(input.body, variables);
+  const status = await sendEmail({ eventKey: input.eventKey ?? 'admin.manual_email', to, subject, body, site });
+  return { status, error: statusError(status, 'email') };
+}
+
+export async function sendManualSms(input: { to: string; body: string; eventKey?: string }): Promise<{ status: DeliveryStatus; error?: string }> {
+  const site = await getSiteConfig();
+  const to = normalizePhone(input.to);
+  const body = renderTemplate(input.body, {
+    site_name: site.name,
+    site_url: publicSiteUrl(),
+    site_email: site.email,
+    site_phone: site.phone,
+    customer_name: 'cliente',
+    customer_phone: to,
+  });
+  const status = await sendSms({ eventKey: input.eventKey ?? 'admin.manual_sms', to, body });
+  return { status, error: statusError(status, 'sms') };
 }
 
 export async function sendEmailCampaign(input: {

@@ -154,3 +154,11 @@
 - [x] As páginas de Política de Privacidade e Termos e Condições foram reescritas com contactos GameAO, data de atualização, secções completas e sem placeholders.
 - [x] A página Sobre Nós deixou de apresentar equipa genérica: usa o logo real GameAO e apresenta apenas Delvis de Morais como CEO & Fundador, com a fotografia e biografia fornecidas.
 - [x] Typecheck, build de produção, rotas profundas HTTP e inspeção visual das páginas públicas e do painel foram validados sem erros de runtime.
+
+## 20. Biblioteca de templates GameAO e envios manuais — tarefa atual
+
+- [x] Disponibilizar 17 modelos de email com conteúdo original nas categorias **Agradecimento, Aniversário, Anúncio, Boas-vindas, Confirmação, Feedback, Lançamento, Lembrete, Notificação, Novo produto, Oferta especial, Onboarding, Post de blog, Progresso, Reengajamento, Saudação e Venda**. Os mesmos registros são selecionáveis no envio manual e podem ser associados a eventos no motor automático; por omissão, Boas-vindas está associado a `user.welcome`, sem substituir nem apagar o modelo legado.
+- [x] Cada modelo usa identidade GameAO e conteúdo apropriado à categoria, com imagem, logo, slogan, contactos, assinatura, assunto e variáveis dinâmicas. A referência Brevo e o painel antigo Morásio orientaram apenas padrões de apresentação e organização; os textos são originais e não copiam literalmente layouts, texto ou ativos proprietários.
+- [x] Criar envio manual de email para selecionar um modelo, personalizar o conteúdo, definir assunto, escolher um destinatário individual ou envio em massa e pré-visualizar antes do envio. Está acessível em **Notificações** e em **Marketing → Campanhas**. O envio em massa é restrito a contatos com subscrição ativa, limitado a 5.000 destinatários e exige confirmação antes de enviar.
+- [x] Criar envio manual de SMS com campo de número de destino, campo de mensagem, ação de envio, validação de número e registo do estado da entrega, sem expor a chave TelcoSMS. Acesso disponível em Notificações e por atalho em Marketing → Campanhas.
+- [x] O painel permanece responsivo, mostra estados claros e separa composição, pré-visualização e confirmação de envio. Nenhum email ou SMS foi enviado durante a implementação; não houve escrita no banco compartilhado.

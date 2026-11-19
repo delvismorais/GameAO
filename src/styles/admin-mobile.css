@@ -169,3 +169,5 @@
 @media (max-width:390px){.admin-kpis{grid-template-columns:1fr}.admin-kpis button,.admin-kpis article{min-height:96px}.admin-topbar__icon-action{display:none}.admin-head--inner .page-title{font-size:21px}.admin-order-result{grid-template-columns:1fr}}
 
 @media(max-width:640px){.homepage-choice-grid{grid-template-columns:1fr}.homepage-editor{padding:12px}.homepage-slide-editor,.homepage-preorder-editor{padding:10px}.admin-fieldset__head{align-items:flex-start;flex-direction:column}}
+
+@media(max-width:640px){.admin-email-mode{display:grid;grid-template-columns:1fr 1fr}.admin-email-mode button{min-height:42px}.admin-email-preview{min-height:460px}.admin-sms-counter{align-items:flex-start;flex-direction:column;gap:4px}.admin-audience-note{padding:11px}.admin-email-mode+.admin-communication-grid{margin-top:2px}}

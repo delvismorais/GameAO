@@ -16,6 +16,8 @@ import {
   publicSiteUrl,
   normalizePhone,
   sendManualNotification,
+  sendManualEmail,
+  sendManualSms,
   sendTestNotification,
   smsConfigured,
   whatsappConfigured,
@@ -301,11 +303,12 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     const channel = ['email', 'whatsapp', 'sms', 'in_app'].includes(String(request.body?.channel)) ? String(request.body.channel) as NotificationChannel : null;
     const subject = text(request.body?.subject, 255);
     const body = text(request.body?.body, 20000);
-    if (!eventKey || !channel || !body) { response.status(400).json({ error: 'invalid_template', message: 'Evento, canal e conteúdo são obrigatórios.' }); return; }
+    const automaticEventKey = text(request.body?.automaticEventKey, 80) || null;
+    if (!eventKey || !channel || !body || (automaticEventKey && (channel !== 'email' || !/^[a-z][a-z0-9._-]*$/i.test(automaticEventKey)))) { response.status(400).json({ error: 'invalid_template', message: 'Evento, canal e conteúdo são obrigatórios; a associação automática deve indicar um evento válido de email.' }); return; }
     try {
-      await getPool().execute(`INSERT INTO notification_templates (event_key, channel, name, subject, body) VALUES (?, ?, ?, ?, ?)`, [eventKey, channel, text(request.body?.name, 180) || eventKey, subject, body]);
+      await getPool().execute(`INSERT INTO notification_templates (event_key, channel, name, subject, body, automatic_event_key) VALUES (?, ?, ?, ?, ?, ?)`, [eventKey, channel, text(request.body?.name, 180) || eventKey, subject, body, automaticEventKey]);
     } catch {
-      response.status(409).json({ error: 'duplicate_template', message: 'Já existe um modelo para este evento e canal.' }); return;
+      response.status(409).json({ error: 'duplicate_template', message: 'Já existe um modelo para este evento/canal ou um modelo associado a esse evento automático.' }); return;
     }
     await deps.recordAudit(admin.id, 'notification_template.create', 'notification_template', `${eventKey}:${channel}`);
     response.status(201).json({ ok: true });
@@ -315,7 +318,13 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (!deps.requireDatabase(response)) return;
     const admin = await deps.requireAdmin(request, response); if (!admin) return;
     const id = Number(request.params.id);
-    await getPool().execute(`UPDATE notification_templates SET name = ?, subject = ?, body = ?, is_active = ?, updated_at = NOW() WHERE id = ?`, [text(request.body?.name, 180), text(request.body?.subject, 255), text(request.body?.body, 20000), request.body?.isActive === false ? 0 : 1, id]);
+    const automaticEventKey = text(request.body?.automaticEventKey, 80) || null;
+    if (automaticEventKey && (request.body?.channel !== 'email' || !/^[a-z][a-z0-9._-]*$/i.test(automaticEventKey))) { response.status(400).json({ error: 'invalid_template', message: 'Indique um evento automático válido para um modelo de email.' }); return; }
+    try {
+      await getPool().execute(`UPDATE notification_templates SET name = ?, subject = ?, body = ?, is_active = ?, automatic_event_key = ?, updated_at = NOW() WHERE id = ?`, [text(request.body?.name, 180), text(request.body?.subject, 255), text(request.body?.body, 20000), request.body?.isActive === false ? 0 : 1, automaticEventKey, id]);
+    } catch {
+      response.status(409).json({ error: 'duplicate_template', message: 'Outro modelo já está associado a esse evento automático.' }); return;
+    }
     await deps.recordAudit(admin.id, 'notification_template.update', 'notification_template', String(id));
     response.json({ ok: true });
   }));
@@ -359,6 +368,40 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     const result = await sendManualNotification({ eventKey: text(request.body?.eventKey, 80) || 'admin.manual_order', channel, order: { ...order, items }, recipient: recipient || null, subject, body });
     await deps.recordAudit(admin.id, 'notification.manual_send', 'shop_order', String(order.id), { orderNumber, channel, status: result.status });
     response.status(result.status === 'sent' ? 200 : 422).json({ ok: result.status === 'sent', ...result });
+  }));
+
+  app.get('/api/admin/email/audience-count', wrap(async (request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    if (!await deps.requireAdmin(request, response)) return;
+    const [[row]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total FROM marketing_leads WHERE status = 'subscribed'`);
+    response.json({ subscribedCount: Number(row?.total ?? 0), sendLimit: 5000 });
+  }));
+
+  app.post('/api/admin/email/manual', wrap(async (request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    const admin = await deps.requireAdmin(request, response); if (!admin) return;
+    const to = text(request.body?.to, 255).toLowerCase();
+    const eventKey = text(request.body?.eventKey, 80) || 'admin.manual_email';
+    const subject = text(request.body?.subject, 255);
+    const body = text(request.body?.body, 20000);
+    const customerName = text(request.body?.customerName, 160);
+    if (!validEmail(to) || !subject || !body) { response.status(400).json({ error: 'invalid_manual_email', message: 'Indique um destinatário válido, assunto e conteúdo.' }); return; }
+    const result = await sendManualEmail({ eventKey, to, customerName, subject, body });
+    await deps.recordAudit(admin.id, 'notification.manual_send', 'notification', eventKey, { channel: 'email', status: result.status });
+    response.status(result.status === 'sent' ? 200 : result.status === 'not_configured' ? 503 : 422).json({ ok: result.status === 'sent', ...result });
+  }));
+
+  app.post('/api/admin/sms/manual', wrap(async (request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    const admin = await deps.requireAdmin(request, response); if (!admin) return;
+    const to = text(request.body?.to, 40);
+    const message = text(request.body?.message, 1000);
+    const normalized = normalizePhone(to);
+    if (!/^2449\d{8}$/.test(normalized)) { response.status(400).json({ error: 'invalid_recipient', message: 'Indique um número angolano válido, com 9 dígitos ou indicativo +244.' }); return; }
+    if (!message || message.length > 160) { response.status(400).json({ error: 'invalid_message', message: 'A mensagem deve ter entre 1 e 160 caracteres.' }); return; }
+    const result = await sendManualSms({ to: normalized, body: message });
+    await deps.recordAudit(admin.id, 'notification.manual_send', 'notification', 'admin.manual_sms', { channel: 'sms', status: result.status });
+    response.status(result.status === 'sent' ? 200 : result.status === 'not_configured' ? 503 : 422).json({ ok: result.status === 'sent', ...result });
   }));
 
   app.get('/api/admin/notification-deliveries', wrap(async (request, response) => {
