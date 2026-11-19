@@ -81,6 +81,7 @@ export interface User {
 
 interface StoreContextValue {
   catalogProducts: Product[];
+  catalogLoaded: boolean;
   catalogCategories: CatalogCategory[];
   cart: CartLine[];
   cartCount: number;
@@ -128,6 +129,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [user, setUser] = useState<User | null>(null);
   const [serverProducts, setServerProducts] = useState<Product[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<CatalogCategory[]>(CATEGORIES);
   // As encomendas vivem exclusivamente no servidor. O browser guarda apenas o
   // carrinho, a lista de desejos e preferências temporárias.
@@ -156,7 +158,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     fetch('/api/catalog/products')
       .then((response) => response.ok ? response.json() : { products: [] })
       .then((data: { products?: Product[] }) => { if (active && Array.isArray(data.products)) setServerProducts(data.products); })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (active) setCatalogLoaded(true); });
     return () => { active = false; };
   }, []);
 
@@ -351,6 +354,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<StoreContextValue>(
     () => ({
       catalogProducts,
+      catalogLoaded,
       catalogCategories,
       cart,
       cartCount,
@@ -378,6 +382,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       catalogProducts,
+      catalogLoaded,
       catalogCategories,
       cart,
       cartCount,

@@ -22,7 +22,7 @@ type ReviewItem = { id: number; author: string; rating: number; text: string; da
 
 export function Product() {
   const { slug } = useParams();
-  const { catalogProducts, catalogCategories, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared } = useStore();
+  const { catalogProducts, catalogLoaded, catalogCategories, addToCart, toggleWishlist, isWishlisted, toggleCompare, isCompared } = useStore();
   const product = slug ? catalogProducts.find((item) => item.slug === slug) ?? getProductBySlug(slug) : undefined;
   const { showToast } = useToast();
   const { rate } = useSettings();
@@ -92,6 +92,16 @@ export function Product() {
     return sameCategory.slice(0, 6);
   }, [catalogProducts, product]);
 
+  if (!product && !catalogLoaded) {
+    return (
+      <PageShell>
+        <div className="page-loader" role="status" aria-live="polite">
+          <span className="page-loader__spinner" aria-hidden="true" />
+          <span>A carregar…</span>
+        </div>
+      </PageShell>
+    );
+  }
   if (!product) return <Navigate to="/shop" replace />;
 
   const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId);
