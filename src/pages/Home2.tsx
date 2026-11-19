@@ -19,6 +19,9 @@ import {
   HOME2_PROMOS,
   HOME2_SLIDES,
 } from '../data/site';
+import type { HomepageContentConfig } from '../data/site';
+import type { Post } from '../data/posts';
+import { useHomepageContent } from '../lib/homepageContent';
 
 const HOME_TABS: CarouselTab[] = [
   { id: 'all', label: 'Todos' },
@@ -27,17 +30,22 @@ const HOME_TABS: CarouselTab[] = [
   { id: 'pc', label: 'PC', category: 'pc' },
 ];
 
-export function Home2() {
+export function Home2({ configuredContent, configuredPosts }: { configuredContent?: HomepageContentConfig; configuredPosts?: Post[] } = {}) {
   const { catalogProducts } = useStore();
+  const runtime = useHomepageContent();
+  const content = configuredContent ?? runtime.content;
+  const posts = configuredPosts ?? runtime.posts;
+  const homepage = content.home2;
   const featuredProducts = catalogProducts.filter((product) => product.hot || product.featuredOrder !== undefined).slice(0, 10);
-  const dealProducts = catalogProducts.filter((product) => product.salePriceUsd !== undefined && product.salePriceUsd < product.basePriceUsd).slice(0, 10);
+  const catalogDeals = catalogProducts.filter((product) => product.salePriceUsd !== undefined && product.salePriceUsd < product.basePriceUsd);
+  const dealProducts = homepage.dealProductSlugs.map((slug) => catalogDeals.find((product) => product.slug === slug)).filter((product): product is typeof catalogProducts[number] => Boolean(product));
   const recentProducts = [...catalogProducts].sort((a, b) => a.shopOrder - b.shopOrder).slice(0, 10);
   const featured = featuredProducts.length ? featuredProducts : FEATURED_PRODUCTS;
   const deals = dealProducts.length ? dealProducts : DEAL_PRODUCTS;
   const recent = recentProducts.length ? recentProducts : RECENT_PRODUCTS;
   return (
     <div className="home home--dark">
-      <HeroSlider slides={HOME2_SLIDES} />
+      {homepage.heroEnabled && homepage.slides.length > 0 && <HeroSlider slides={homepage.slides.length ? homepage.slides : HOME2_SLIDES} />}
       <FeatureBoxes features={HOME2_FEATURES} variant="dark" />
       <ProductCarousel
         id="featured-games"
@@ -46,16 +54,16 @@ export function Home2() {
         tabs={HOME_TABS}
         variant="dark"
       />
-      <DealsSection products={deals} variant="dark" />
+      {homepage.dealsEnabled && <DealsSection products={dealProducts.length ? dealProducts : deals} variant="dark" countdownEndsAt={homepage.countdownEndsAt} />}
       <PromoGlider promos={HOME2_PROMOS} />
-      <PreorderBanner data={HOME2_PREORDER} />
+      {homepage.preorderEnabled && <PreorderBanner data={homepage.preorder ?? HOME2_PREORDER} />}
       <section className="home-section recent-games home-section--dark">
         <div className="container">
           <SectionHeading title="Jogos Recentes" />
           <ProductGrid products={recent} columns={5} variant="dark" />
         </div>
       </section>
-      <BlogSection variant="dark" />
+      {homepage.newsEnabled && <BlogSection variant="dark" selectedSlugs={homepage.recentPostSlugs} availablePosts={posts} />}
     </div>
   );
 }

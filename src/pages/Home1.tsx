@@ -19,6 +19,9 @@ import {
   HOME1_PROMOS,
   HOME1_SLIDES,
 } from '../data/site';
+import type { HomepageContentConfig } from '../data/site';
+import type { Post } from '../data/posts';
+import { useHomepageContent } from '../lib/homepageContent';
 
 const HOME_TABS: CarouselTab[] = [
   { id: 'all', label: 'Todos' },
@@ -27,14 +30,19 @@ const HOME_TABS: CarouselTab[] = [
   { id: 'pc', label: 'PC', category: 'pc' },
 ];
 
-export function Home1() {
+export function Home1({ configuredContent, configuredPosts }: { configuredContent?: HomepageContentConfig; configuredPosts?: Post[] } = {}) {
   const { catalogProducts } = useStore();
+  const runtime = useHomepageContent();
+  const content = configuredContent ?? runtime.content;
+  const posts = configuredPosts ?? runtime.posts;
+  const homepage = content.home1;
   const featured = catalogProducts.filter((product) => product.hot || product.featuredOrder !== undefined).slice(0, 10);
-  const deals = catalogProducts.filter((product) => product.salePriceUsd !== undefined && product.salePriceUsd < product.basePriceUsd).slice(0, 10);
+  const catalogDeals = catalogProducts.filter((product) => product.salePriceUsd !== undefined && product.salePriceUsd < product.basePriceUsd);
+  const deals = homepage.dealProductSlugs.map((slug) => catalogDeals.find((product) => product.slug === slug)).filter((product): product is typeof catalogProducts[number] => Boolean(product));
   const recent = [...catalogProducts].sort((a, b) => a.shopOrder - b.shopOrder).slice(0, 10);
   return (
     <div className="home home--light">
-      <HeroSlider slides={HOME1_SLIDES} />
+      {homepage.heroEnabled && homepage.slides.length > 0 && <HeroSlider slides={homepage.slides.length ? homepage.slides : HOME1_SLIDES} />}
       <FeatureBoxes features={HOME1_FEATURES} overlap />
       <ProductCarousel
         id="featured-games"
@@ -42,16 +50,16 @@ export function Home1() {
         products={featured.length ? featured : FEATURED_PRODUCTS}
         tabs={HOME_TABS}
       />
-      <DealsSection products={deals.length ? deals : DEAL_PRODUCTS} />
+      {homepage.dealsEnabled && <DealsSection products={deals.length ? deals : (catalogDeals.length ? catalogDeals.slice(0, 10) : DEAL_PRODUCTS)} countdownEndsAt={homepage.countdownEndsAt} />}
       <PromoGlider promos={HOME1_PROMOS} />
-      <PreorderBanner data={HOME1_PREORDER} />
+      {homepage.preorderEnabled && <PreorderBanner data={homepage.preorder ?? HOME1_PREORDER} />}
       <section className="home-section recent-games">
         <div className="container">
           <SectionHeading title="Jogos Recentes" />
           <ProductGrid products={recent.length ? recent : RECENT_PRODUCTS} columns={5} />
         </div>
       </section>
-      <BlogSection />
+      {homepage.newsEnabled && <BlogSection selectedSlugs={homepage.recentPostSlugs} availablePosts={posts} />}
     </div>
   );
 }

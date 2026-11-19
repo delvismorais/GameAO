@@ -27,6 +27,14 @@ import { OrderTracking } from './pages/OrderTracking';
 import { NotFound } from './pages/NotFound';
 import { Legal } from './pages/Legal';
 import { captureAffiliateCodeFromUrl } from './lib/affiliate';
+import { useHomepageContent } from './lib/homepageContent';
+
+function PrimaryHomepage() {
+  const { content, posts } = useHomepageContent();
+  return content.primaryHome === 'home1'
+    ? <Home1 configuredContent={content} configuredPosts={posts} />
+    : <Home2 configuredContent={content} configuredPosts={posts} />;
+}
 
 export default function App() {
   useEffect(() => { captureAffiliateCodeFromUrl(); }, []);
@@ -37,7 +45,7 @@ export default function App() {
           <BrowserRouter>
             <Layout>
               <Routes>
-                <Route path="/" element={<Home2 />} />
+                <Route path="/" element={<PrimaryHomepage />} />
                 <Route path="/homepage-1" element={<Home1 />} />
                 <Route path="/homepage-2" element={<Home2 />} />
                 <Route path="/shop" element={<Shop />} />

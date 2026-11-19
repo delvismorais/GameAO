@@ -202,6 +202,56 @@ export const HOME2_FEATURES: Feature[] = [
   },
 ];
 
+export type HomepageId = 'home1' | 'home2';
+
+export interface HomepageVariantConfig {
+  heroEnabled: boolean;
+  dealsEnabled: boolean;
+  preorderEnabled: boolean;
+  newsEnabled: boolean;
+  slides: Slide[];
+  dealProductSlugs: string[];
+  countdownEndsAt: string;
+  preorder: Preorder;
+  recentPostSlugs: string[];
+}
+
+export interface HomepageContentConfig {
+  version: 1;
+  primaryHome: HomepageId;
+  home1: HomepageVariantConfig;
+  home2: HomepageVariantConfig;
+}
+
+const DEFAULT_COUNTDOWN = '2028-09-29T00:00:00';
+
+export const DEFAULT_HOMEPAGE_CONTENT: HomepageContentConfig = {
+  version: 1,
+  primaryHome: 'home2',
+  home1: {
+    heroEnabled: true,
+    dealsEnabled: true,
+    preorderEnabled: true,
+    newsEnabled: true,
+    slides: HOME1_SLIDES,
+    dealProductSlugs: ['call-of-duty-black-ops', 'apex-legends', 'god-of-war', 'mortal-shell-enhanced'],
+    countdownEndsAt: DEFAULT_COUNTDOWN,
+    preorder: HOME1_PREORDER,
+    recentPostSlugs: [],
+  },
+  home2: {
+    heroEnabled: true,
+    dealsEnabled: true,
+    preorderEnabled: true,
+    newsEnabled: true,
+    slides: HOME2_SLIDES,
+    dealProductSlugs: ['call-of-duty-black-ops', 'apex-legends', 'god-of-war', 'mortal-shell-enhanced'],
+    countdownEndsAt: DEFAULT_COUNTDOWN,
+    preorder: HOME2_PREORDER,
+    recentPostSlugs: [],
+  },
+};
+
 export const GAMEAO_LOGO_URL = 'https://gameao.onrender.com/assets/gameao-logo.png';
 
 export const FOUNDER_PROFILE = {

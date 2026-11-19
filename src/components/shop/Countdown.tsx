@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 
-const TARGET = new Date('2028-09-29T00:00:00').getTime();
+const FALLBACK_TARGET = '2028-09-29T00:00:00';
 
-function getParts() {
-  const diff = Math.max(0, TARGET - Date.now());
+function getParts(targetDate: string) {
+  const target = new Date(targetDate || FALLBACK_TARGET).getTime();
+  const diff = Math.max(0, (Number.isFinite(target) ? target : new Date(FALLBACK_TARGET).getTime()) - Date.now());
   return {
     days: Math.floor(diff / 86_400_000),
     hours: Math.floor((diff / 3_600_000) % 24),
@@ -12,13 +13,14 @@ function getParts() {
   };
 }
 
-export function Countdown() {
-  const [parts, setParts] = useState(getParts);
+export function Countdown({ endsAt }: { endsAt?: string }) {
+  const [parts, setParts] = useState(() => getParts(endsAt ?? FALLBACK_TARGET));
 
   useEffect(() => {
-    const timer = window.setInterval(() => setParts(getParts()), 1000);
+    setParts(getParts(endsAt ?? FALLBACK_TARGET));
+    const timer = window.setInterval(() => setParts(getParts(endsAt ?? FALLBACK_TARGET)), 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [endsAt]);
 
   const blocks = [
     { value: String(parts.days).padStart(3, '0'), label: 'Dias' },

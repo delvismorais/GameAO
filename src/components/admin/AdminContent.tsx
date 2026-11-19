@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { AdminSection, Badge, Empty, Field, Modal, Notice, api, formatDate, useJson } from './ui';
 import type { AdminSectionId } from './adminNav';
+import { DEFAULT_HOMEPAGE_CONTENT, type HomepageContentConfig, type HomepageId, type Slide } from '../../data/site';
+import { normalizeHomepageContent } from '../../lib/homepageContent';
 
 type Banner = { id: number; slug: string; title: string; description?: string; image_url: string; button_label?: string; href?: string; variant: string; sort_order: number; is_active: number; starts_at?: string; ends_at?: string };
 type Popup = { id: number; title: string; message: string; image_url?: string; cta_label?: string; cta_href?: string; variant: string; delay_seconds: number; frequency: string; is_active: number; starts_at?: string; ends_at?: string; sort_order: number };
@@ -8,6 +10,12 @@ type Post = { slug: string; title: string; published_date: string; category: str
 type Comment = { id: number; post_slug: string; post_title?: string; author_name: string; author_email?: string; content: string; status: string; created_at: string };
 type Message = { id: number; name: string; email: string; phone?: string; subject?: string; message: string; status: string; created_at: string };
 type Settings = Record<string, any>;
+type AdminProduct = { slug: string; name: string; image?: string; imageCard?: string };
+type AdminPost = { slug: string; title: string; status?: string };
+
+function cloneHomepage(value: HomepageContentConfig): HomepageContentConfig {
+  return JSON.parse(JSON.stringify(value)) as HomepageContentConfig;
+}
 
 async function uploadContentImage(file: File, kind: 'banner' | 'blog'): Promise<{ url?: string; error?: string }> {
   const body = new FormData();
@@ -39,22 +47,50 @@ function AdminHomepage() {
   const settings = useSettings();
   const [message, setMessage] = useState('');
   const [draft, setDraft] = useState<{ announcement: string; announcementActive: boolean; tagline: string } | null>(null);
+  const [homepageDraft, setHomepageDraft] = useState<HomepageContentConfig | null>(null);
+  const catalog = useJson<{ products: AdminProduct[] }>('/api/catalog/products');
+  const blog = useJson<{ posts: AdminPost[] }>('/api/blog/posts');
   const data = settings.data?.settings;
   const current = draft ?? { announcement: String(data?.store_status?.announcement ?? ''), announcementActive: Boolean(data?.store_status?.announcementActive), tagline: String(data?.site_config?.tagline ?? '') };
+  const homepage = homepageDraft ?? normalizeHomepageContent(data?.homepage_content ?? DEFAULT_HOMEPAGE_CONTENT);
+  const updateVariant = (id: HomepageId, patch: Partial<HomepageContentConfig[HomepageId]>) => setHomepageDraft((value) => ({ ...cloneHomepage(value ?? homepage), [id]: { ...homepage[id], ...patch } }));
+  const updateSlide = (id: HomepageId, index: number, patch: Partial<Slide>) => updateVariant(id, { slides: homepage[id].slides.map((slide, position) => position === index ? { ...slide, ...patch } : slide) });
+  const addSlide = (id: HomepageId) => updateVariant(id, { slides: [...homepage[id].slides, { id: `${id}-slide-${Date.now()}`, title: 'Novo destaque', description: '', buttonLabel: 'Comprar Agora', href: '/shop', image: '', align: 'left' }] });
+  const removeSlide = (id: HomepageId, index: number) => updateVariant(id, { slides: homepage[id].slides.filter((_, position) => position !== index) });
   const save = async () => {
     const first = await api('/api/admin/site-settings/store_status', { method: 'PUT', body: JSON.stringify({ value: { ...(data?.store_status ?? {}), announcement: current.announcement, announcementActive: current.announcementActive } }) });
     const second = first.ok ? await api('/api/admin/site-settings/site_config', { method: 'PUT', body: JSON.stringify({ value: { ...(data?.site_config ?? {}), tagline: current.tagline } }) }) : first;
-    setMessage(second.ok ? 'Homepage atualizada.' : second.error ?? 'Falha ao guardar.'); if (second.ok) await settings.reload();
+    const third = second.ok ? await api('/api/admin/site-settings/homepage_content', { method: 'PUT', body: JSON.stringify({ value: homepage }) }) : second;
+    setMessage(third.ok ? 'Homepage atualizada.' : third.error ?? 'Falha ao guardar.'); if (third.ok) await settings.reload();
   };
-  return <AdminSection title="Gestão da homepage" subtitle="Anúncio global, slogan e atalhos para os conteúdos da página inicial.">
+  const productName = (slug: string) => catalog.data?.products.find((product) => product.slug === slug)?.name ?? slug;
+  const postName = (slug: string) => blog.data?.posts.find((post) => post.slug === slug)?.title ?? slug;
+  return <AdminSection title="Gestão da homepage" subtitle="Escolha a página principal e personalize os destaques, ofertas, pré-reserva e notícias de ambas as homepages.">
     <Notice message={message} tone={message.includes('Falha') ? 'error' : 'success'} />
-    {settings.loading ? <p className="admin-state">A carregar…</p> : <div className="admin-split"><form className="admin-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <Field label="Slogan da loja"><input value={current.tagline} onChange={(event) => setDraft({ ...current, tagline: event.target.value })} /></Field>
+    {settings.loading ? <p className="admin-state">A carregar…</p> : <form className="admin-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <div className="form-row"><Field label="Homepage principal"><select value={homepage.primaryHome} onChange={(event) => setHomepageDraft({ ...cloneHomepage(homepage), primaryHome: event.target.value as HomepageId })}><option value="home1">Homepage 1 — clara</option><option value="home2">Homepage 2 — escura</option></select></Field><Field label="Slogan da loja"><input value={current.tagline} onChange={(event) => setDraft({ ...current, tagline: event.target.value })} /></Field></div>
       <Field label="Anúncio global (barra superior)"><textarea rows={2} value={current.announcement} onChange={(event) => setDraft({ ...current, announcement: event.target.value })} /></Field>
       <label className="admin-check"><input type="checkbox" checked={current.announcementActive} onChange={(event) => setDraft({ ...current, announcementActive: event.target.checked })} /> Mostrar anúncio no website</label>
-      <button type="submit" className="btn btn--primary">Guardar homepage</button>
-    </form><div className="admin-links-grid"><a href="/admin?secao=banners">Banners e carrosséis</a><a href="/admin?secao=featured">Produtos em destaque</a><a href="/admin?secao=blog">Artigos do blog</a><a href="/admin?secao=popups">Popups e anúncios</a></div></div>}
+      {(['home1', 'home2'] as HomepageId[]).map((id) => <HomepageVariantEditor key={id} id={id} config={homepage[id]} products={catalog.data?.products ?? []} posts={blog.data?.posts ?? []} productName={productName} postName={postName} onSlideChange={(index, patch) => updateSlide(id, index, patch)} onAddSlide={() => addSlide(id)} onRemoveSlide={(index) => removeSlide(id, index)} onChange={(patch) => updateVariant(id, patch)} />)}
+      <button type="submit" className="btn btn--primary">Guardar todas as alterações da homepage</button>
+    </form>}
   </AdminSection>;
+}
+
+function HomepageVariantEditor({ id, config, products, posts, productName, postName, onSlideChange, onAddSlide, onRemoveSlide, onChange }: { id: HomepageId; config: HomepageContentConfig[HomepageId]; products: AdminProduct[]; posts: AdminPost[]; productName: (slug: string) => string; postName: (slug: string) => string; onSlideChange: (index: number, patch: Partial<Slide>) => void; onAddSlide: () => void; onRemoveSlide: (index: number) => void; onChange: (patch: Partial<HomepageContentConfig[HomepageId]>) => void }) {
+  const setList = (key: 'dealProductSlugs' | 'recentPostSlugs', value: string) => onChange({ [key]: value.split(',').map((item) => item.trim()).filter(Boolean) } as Partial<HomepageContentConfig[HomepageId]>);
+  return <fieldset className="admin-fieldset homepage-editor"><legend>{id === 'home1' ? 'Homepage 1 — clara' : 'Homepage 2 — escura'}</legend>
+    <div className="admin-checks"><label className="admin-check"><input type="checkbox" checked={config.heroEnabled} onChange={(event) => onChange({ heroEnabled: event.target.checked })} /> Mostrar primeira CTA</label><label className="admin-check"><input type="checkbox" checked={config.dealsEnabled} onChange={(event) => onChange({ dealsEnabled: event.target.checked })} /> Mostrar Ofertas da Semana</label><label className="admin-check"><input type="checkbox" checked={config.preorderEnabled} onChange={(event) => onChange({ preorderEnabled: event.target.checked })} /> Mostrar Pré-reserva</label><label className="admin-check"><input type="checkbox" checked={config.newsEnabled} onChange={(event) => onChange({ newsEnabled: event.target.checked })} /> Mostrar Notícias Recentes</label></div>
+    <div className="form-row"><Field label="Fim das Ofertas da Semana" hint="Data e hora local; deixe uma data futura para o contador."><input type="datetime-local" value={config.countdownEndsAt.slice(0, 16)} onChange={(event) => onChange({ countdownEndsAt: event.target.value })} /></Field><Field label="Produtos em oferta" hint="Use os slugs separados por vírgulas. A ordem aqui é a ordem do carrossel."><input value={config.dealProductSlugs.join(', ')} onChange={(event) => setList('dealProductSlugs', event.target.value)} /></Field></div>
+    <small className="admin-form__hint">{config.dealProductSlugs.map(productName).join(' · ') || 'Nenhum produto selecionado'}</small>
+    <div className="homepage-choice-grid" aria-label="Selecionar produtos da oferta">{products.slice(0, 60).map((product) => <label key={product.slug} className="admin-check"><input type="checkbox" checked={config.dealProductSlugs.includes(product.slug)} onChange={(event) => onChange({ dealProductSlugs: event.target.checked ? [...config.dealProductSlugs, product.slug] : config.dealProductSlugs.filter((slug) => slug !== product.slug) })} /> {product.name}</label>)}</div>
+    <Field label="Notícias Recentes" hint="Slugs separados por vírgulas; a ordem define a apresentação."><input value={config.recentPostSlugs.join(', ')} onChange={(event) => setList('recentPostSlugs', event.target.value)} /></Field>
+    <small className="admin-form__hint">{config.recentPostSlugs.map(postName).join(' · ') || (posts.length ? 'Sem seleção: serão usados os artigos mais recentes.' : 'Sem artigos disponíveis.')}</small>
+    <div className="homepage-choice-grid" aria-label="Selecionar notícias recentes">{posts.slice(0, 60).map((post) => <label key={post.slug} className="admin-check"><input type="checkbox" checked={config.recentPostSlugs.includes(post.slug)} onChange={(event) => onChange({ recentPostSlugs: event.target.checked ? [...config.recentPostSlugs, post.slug] : config.recentPostSlugs.filter((slug) => slug !== post.slug) })} /> {post.title}</label>)}</div>
+    <div className="admin-fieldset__head"><strong>Primeira CTA / destaques</strong><button type="button" className="btn btn--outline btn--sm" onClick={onAddSlide}>Adicionar destaque</button></div>
+    {config.slides.map((slide, index) => <div className="homepage-slide-editor" key={slide.id || index}><div className="form-row"><Field label={`Título ${index + 1}`}><input value={slide.title} onChange={(event) => onSlideChange(index, { title: event.target.value })} /></Field><Field label="Imagem (URL)"><input value={slide.image} onChange={(event) => onSlideChange(index, { image: event.target.value })} /></Field></div><div className="form-row"><Field label="Descrição"><textarea rows={2} value={slide.description} onChange={(event) => onSlideChange(index, { description: event.target.value })} /></Field><Field label="Link"><input value={slide.href} onChange={(event) => onSlideChange(index, { href: event.target.value })} /></Field></div><div className="form-row"><Field label="Texto do botão"><input value={slide.buttonLabel} onChange={(event) => onSlideChange(index, { buttonLabel: event.target.value })} /></Field><Field label="Alinhamento"><select value={slide.align} onChange={(event) => onSlideChange(index, { align: event.target.value as Slide['align'] })}><option value="left">Esquerda</option><option value="center">Centro</option></select></Field></div><button type="button" className="btn btn--outline btn--sm" onClick={() => onRemoveSlide(index)}>Remover destaque</button></div>)}
+    <div className="homepage-preorder-editor"><strong>Pré-reserva</strong><div className="form-row"><Field label="Título"><input value={config.preorder.title} onChange={(event) => onChange({ preorder: { ...config.preorder, title: event.target.value } })} /></Field><Field label="Imagem (URL)"><input value={config.preorder.image} onChange={(event) => onChange({ preorder: { ...config.preorder, image: event.target.value } })} /></Field></div><div className="form-row"><Field label="Descrição"><textarea rows={2} value={config.preorder.description} onChange={(event) => onChange({ preorder: { ...config.preorder, description: event.target.value } })} /></Field><Field label="Link"><input value={config.preorder.href} onChange={(event) => onChange({ preorder: { ...config.preorder, href: event.target.value } })} /></Field></div><div className="form-row"><Field label="Texto do botão"><input value={config.preorder.buttonLabel} onChange={(event) => onChange({ preorder: { ...config.preorder, buttonLabel: event.target.value } })} /></Field><Field label="Posição da imagem"><input value={config.preorder.position ?? ''} onChange={(event) => onChange({ preorder: { ...config.preorder, position: event.target.value } })} /></Field></div></div>
+  </fieldset>;
 }
 
 function AdminBanners({ mode }: { mode: string }) {

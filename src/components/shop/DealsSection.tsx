@@ -7,9 +7,10 @@ import { DealCard } from './DealCard';
 interface DealsSectionProps {
   products: Product[];
   variant?: 'light' | 'dark';
+  countdownEndsAt?: string;
 }
 
-export function DealsSection({ products, variant = 'light' }: DealsSectionProps) {
+export function DealsSection({ products, variant = 'light', countdownEndsAt }: DealsSectionProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(false);
@@ -43,7 +44,7 @@ export function DealsSection({ products, variant = 'light' }: DealsSectionProps)
       <div className="container">
         <div className="deals__head">
           <h2 className="section-heading__title">Ofertas da Semana</h2>
-          <Countdown />
+          <Countdown endsAt={countdownEndsAt} />
         </div>
         <div className="carousel deals__carousel">
           <div className="carousel__viewport deals__viewport" ref={viewportRef} onScroll={updateArrows}>

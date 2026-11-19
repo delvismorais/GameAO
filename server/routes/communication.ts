@@ -41,7 +41,7 @@ async function setting(key: string): Promise<any> {
 async function saveSetting(key: string, value: unknown): Promise<void> {
   await getPool().execute(`INSERT INTO site_settings (setting_key, value_json) VALUES (?, ?) ON CONFLICT (setting_key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()`, [key, JSON.stringify(value)]);
 }
-const ADMIN_SETTING_KEYS = new Set(['site_config', 'social_links', 'sales_counter', 'notifications_config', 'store_status', 'exchange_rate', 'business_info', 'checkout_config', 'delivery_config', 'seo_config', 'faq', 'pages']);
+const ADMIN_SETTING_KEYS = new Set(['site_config', 'social_links', 'sales_counter', 'notifications_config', 'store_status', 'exchange_rate', 'business_info', 'checkout_config', 'delivery_config', 'seo_config', 'faq', 'pages', 'homepage_content']);
 
 export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void {
   // ---------------------------------------------------------------------------
@@ -479,6 +479,12 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
   }));
 
   // Configurações do site e integrações (administração)
+  app.get('/api/homepage-content', wrap(async (_request, response) => {
+    if (!deps.requireDatabase(response)) return;
+    const [rows] = await getPool().query<any[]>(`SELECT value_json FROM site_settings WHERE setting_key = 'homepage_content' LIMIT 1`);
+    response.json({ content: rows[0] ? jsonValue(rows[0].value_json, null) : null });
+  }));
+
   app.get('/api/admin/site-settings', wrap(async (request, response) => {
     if (!deps.requireDatabase(response)) return;
     if (!await deps.requireAdmin(request, response)) return;
