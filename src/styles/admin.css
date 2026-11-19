@@ -115,3 +115,7 @@
   .admin-queue__size { display: none; }
   .admin-queue__status { grid-column: 1 / -1; }
 }
+
+
+
+.homepage-help{display:grid;gap:4px;margin:12px 0;padding:12px 14px;border:1px solid #cfe9df;border-left:4px solid #1b9a6b;border-radius:7px;background:#f3fbf7;color:#435466;font-size:12px}.homepage-help strong{color:#167452}.homepage-live-preview{display:flex;min-height:150px;flex-direction:column;align-items:flex-start;justify-content:center;gap:7px;padding:18px;border-radius:8px;background-color:#263447;background-size:cover;background-position:center;color:#fff}.homepage-live-preview small{font-size:9px;letter-spacing:.12em;opacity:.8}.homepage-live-preview strong{font-size:21px}.homepage-live-preview span{max-width:560px;font-size:12px}.homepage-live-preview b{margin-top:4px;padding:7px 12px;border-radius:5px;background:#18a875;font-size:11px}.homepage-live-preview--preorder{min-height:120px}

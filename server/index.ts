@@ -599,7 +599,25 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
     const [insert] = await connection.execute<any>(`INSERT INTO shop_orders (order_number, access_token_hash, tracking_token_hash, idempotency_key, user_id, customer_name, customer_email, customer_phone, billing_address, billing_city, billing_province, billing_country, billing_postal_code, delivery_address, delivery_date, subtotal_aoa, shipping_aoa, discount_aoa, total_aoa, exchange_rate_usd_aoa, status, payment_status, payment_method, payment_method_id, payment_reference, internal_notes, coupon_id, coupon_code) VALUES (?, SHA2(UUID(), 256), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_payment', 'pending', ?, ?, ?, ?, ?, ?) RETURNING id`, [`GA-PENDING-${randomUUID()}`, sha256(trackingToken), idempotencyKey || null, user?.id ?? null, `${customer.firstName} ${customer.lastName}`.trim(), customer.email.trim().toLowerCase(), customer.phone.trim(), [customer.address, customer.apartment].filter(Boolean).join(', '), customer.city, customer.province, customer.country, customer.postalCode || null, deliveryAddress, deliveryDate, subtotal, shipping, discount, subtotal + shipping - discount, rate, paymentMethod?.code ?? null, paymentMethod?.id ?? null, `GA-PAY-${randomUUID().slice(0, 12).toUpperCase()}`, customer.notes ?? null, coupon?.id ?? null, coupon?.code ?? null]);
     const orderId = Number(Array.isArray(insert) ? insert[0]?.id : insert?.insertId);
     if (!Number.isInteger(orderId) || orderId <= 0) throw new Error('A base de dados não devolveu o identificador da encomenda.');
-    const orderNumber = `GA${orderId}`;
+    // Serialize allocation across app instances; the transaction lock prevents duplicate random candidates.
+    await connection.execute(`SELECT pg_advisory_xact_lock(hashtext('gameao-order-number'))`);
+    let digits = 3;
+    let orderNumber = '';
+    for (;;) {
+      const poolSize = 8 * (10 ** (digits - 1)); // first digit 2–9; subsequent digits 0–9
+      const [usedRows] = await connection.query<any[]>(`SELECT COUNT(*)::int AS total FROM shop_orders WHERE order_number ~ ?`, [`^GA[2-9][0-9]{${digits - 1}}$`]);
+      if (Number(usedRows[0]?.total ?? 0) >= poolSize) { digits += 1; continue; }
+      for (let attempt = 0; attempt < 128; attempt += 1) {
+        const tail = Array.from({ length: digits }, (_, index) => String(Math.floor(Math.random() * (index === 0 ? 8 : 10)) + (index === 0 ? 2 : 0))).join('');
+        const candidate = `GA${tail}`;
+        const [matches] = await connection.query<any[]>(`SELECT 1 FROM shop_orders WHERE order_number = ? LIMIT 1`, [candidate]);
+        if (!matches.length) { orderNumber = candidate; break; }
+      }
+      if (orderNumber) break;
+      // Random retries can cluster near exhaustion; advance only after confirming the current length is exhausted.
+      const [allRows] = await connection.query<any[]>(`SELECT COUNT(*)::int AS total FROM shop_orders WHERE order_number ~ ?`, [`^GA[2-9][0-9]{${digits - 1}}$`]);
+      if (Number(allRows[0]?.total ?? 0) >= poolSize) { digits += 1; continue; }
+    }
     await connection.execute(`UPDATE shop_orders SET order_number = ?, invoice_issued_at = NOW() WHERE id = ?`, [orderNumber, orderId]);
     if (coupon) {
       await connection.execute(`UPDATE coupons SET used_count = used_count + 1, updated_at = NOW() WHERE id = ?`, [coupon.id]);
