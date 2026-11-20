@@ -201,9 +201,17 @@
 ## 24. Estado real dos emails, Groq e avatar do assistente — novembro de 2026
 
 - [x] O envio manual permanece numa fila persistente e só apresenta a mensagem como aceite depois de o provedor responder com sucesso e um identificador. A interface deve separar “aceite pelo serviço de email” de “entregue ao servidor do destinatário”; não pode afirmar que chegou à caixa de entrada nem que foi lido. Typecheck/build locais passaram.
-- [ ] O serviço Resend deve poder reconciliar, por webhook autenticado, os eventos de email enviado/aceite, entregue, atrasado, falhado, bounce permanente, suprimido e reclamação de spam; eventos duplicados não podem duplicar alterações, e os registos das entregas ligadas a pedidos devem receber o mesmo estado atualizado.
+- [ ] O serviço Resend deve poder reconciliar, por webhook autenticado, os eventos de email enviado/aceite, entregue, atrasado, falhado, bounce permanente, suprimido e reclamação de spam; eventos duplicados não podem duplicar alterações, e os registos das entregas ligadas a pedidos devem receber o mesmo estado atualizado. Código, segredo dedicado e endpoint com os sete eventos estão configurados/ativos em produção; ainda falta observar um evento real para confirmar receção ponta a ponta.
 - [x] O histórico administrativo deve mostrar o estado correto e, quando disponível, o identificador do provedor para consulta; falhas devem permanecer consultáveis sem as apresentar como sucesso.
 - [x] O assistente deixa Gemini e usa apenas `GROQ_API_KEY` e `GROQ_MODEL` no servidor, com `openai/gpt-oss-20b` como modelo solicitado/predefinido, mantendo contexto público atual, limites, timeout, mensagens seguras e sem expor credenciais ao navegador. A resposta/payload Groq foi validada com fetch simulado.
 - [x] A imagem fornecida `/home/ubuntu/upload/MascoteIAGamerGAMEAO.png` foi copiada sem substituir o original e usada como avatar do assistente no botão minimizado e na conversa, com apresentação responsiva; SHA-256 da cópia confere com o original.
 - [x] Não foram consultadas nem alteradas chaves do Render; não foram enviados emails ou SMS de teste; não foram criadas encomendas; não foram submetidos comprovativos reais; não foi repetida chamada pública ao assistente. Mapeamento Groq/Resend foi validado localmente com provedor simulado, e `pnpm typecheck`, `pnpm build` e `git diff --check` passaram.
-- [ ] A confirmação Resend em produção só pode ser indicada como ativa depois de configurar `RESEND_WEBHOOK_SECRET` e registar no Resend o endpoint publicado com os eventos suportados; não reutilizar a chave de envio como segredo de webhook.
+- [x] O `RESEND_WEBHOOK_SECRET` dedicado foi configurado no Render sem consultar ou revelar o valor, e o endpoint publicado foi registado e ativado no Resend para os sete eventos suportados; não reutilizar a chave de envio como segredo de webhook. O deploy ficou `live` e `/api/health` retornou `ok=true`/`database_ready=true`. Nenhum evento consta no Resend porque nenhum email foi enviado; a receção real ainda não está comprovada.
+
+
+## 25. Fiabilidade e formatação das respostas do assistente — novembro de 2026
+
+- [x] As sugestões de produtos são apresentadas como lista estruturada e legível, com ênfase e links internos; o renderizador não interpreta HTML arbitrário nem ativa ligações com protocolos perigosos. Em tablets e telemóveis, o assistente fica elevado acima da navegação fixa e não cobre o botão Carrinho. Validado com fixtures locais.
+- [x] A interface apresenta o erro seguro enviado pelo backend e oferece nova tentativa sem duplicar a pergunta no histórico.
+- [x] Em HTTP 429 da Groq, a resposta explica a indisponibilidade e respeita o cabeçalho `Retry-After` quando fornecido; a chave e o modelo existentes não foram consultados nem alterados.
+- [x] Fixtures sintéticas, typecheck, build e diff-check passaram; não foi feita chamada pública ao assistente.

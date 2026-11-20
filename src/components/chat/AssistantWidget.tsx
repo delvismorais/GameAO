@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { AssistantMessage } from './AssistantMessage';
 
-type ChatMessage = { role: 'user' | 'assistant'; text: string; failed?: boolean };
+type ChatMessage = { role: 'user' | 'assistant'; text: string; failed?: boolean; retryText?: string };
 const WELCOME: ChatMessage = {
   role: 'assistant',
   text: 'Olá! Sou o assistente GameAO. Posso ajudar com produtos, categorias, informações da loja e novidades públicas do site. Para consultar uma encomenda, use Acompanhar pedido com o email associado ou o seu token seguro.',
 };
+const GENERIC_ERROR = 'Não foi possível responder agora. Verifique a ligação e tente novamente dentro de instantes.';
 
 export function AssistantWidget() {
   const [open, setOpen] = useState(false);
@@ -21,11 +23,14 @@ export function AssistantWidget() {
     }
   }, [open, messages, sending]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = draft.trim();
+  async function sendMessage(rawText: string, reuseLastUser = false) {
+    const text = rawText.trim();
     if (!text || sending) return;
-    const nextMessages: ChatMessage[] = [...messages.filter((message) => !message.failed), { role: 'user', text }];
+    const history = messages.filter((message) => !message.failed);
+    const last = history[history.length - 1];
+    const nextMessages: ChatMessage[] = reuseLastUser && last?.role === 'user' && last.text === text
+      ? history
+      : [...history, { role: 'user', text }];
     setMessages(nextMessages);
     setDraft('');
     setSending(true);
@@ -36,13 +41,19 @@ export function AssistantWidget() {
         body: JSON.stringify({ messages: nextMessages.slice(-10) }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(typeof data.message === 'string' ? data.message : 'O assistente está temporariamente indisponível. Tente novamente mais tarde.');
+      if (!response.ok) throw new Error(typeof data.message === 'string' ? data.message : GENERIC_ERROR);
       setMessages((current) => [...current, { role: 'assistant', text: String(data.answer ?? 'Não consegui preparar uma resposta. Tente novamente.') }]);
     } catch (error) {
-      setMessages((current) => [...current, { role: 'assistant', text: 'Não foi possível responder agora. Tente novamente dentro de instantes.', failed: true }]);
+      const message = error instanceof TypeError ? GENERIC_ERROR : error instanceof Error ? error.message : GENERIC_ERROR;
+      setMessages((current) => [...current, { role: 'assistant', text: message, failed: true, retryText: text }]);
     } finally {
       setSending(false);
     }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendMessage(draft);
   }
 
   return (
@@ -58,9 +69,12 @@ export function AssistantWidget() {
           </header>
           <div className="gameao-assistant__messages" ref={listRef} role="log" aria-live="polite" aria-relevant="additions text">
             {messages.map((message, index) => (
-              <p className={`gameao-assistant__message gameao-assistant__message--${message.role}`} key={`${index}-${message.role}`}>
-                {message.text}
-              </p>
+              <div className={`gameao-assistant__message gameao-assistant__message--${message.role}`} key={`${index}-${message.role}`}>
+                {message.role === 'assistant' ? <AssistantMessage text={message.text} /> : message.text}
+                {message.failed && message.retryText && (
+                  <button className="gameao-assistant__retry" type="button" onClick={() => void sendMessage(message.retryText!, true)} disabled={sending}>Tentar novamente</button>
+                )}
+              </div>
             ))}
             {sending && <p className="gameao-assistant__typing" aria-label="A preparar resposta">A preparar resposta…</p>}
           </div>
