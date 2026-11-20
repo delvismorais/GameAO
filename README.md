@@ -126,8 +126,8 @@ Para executar o projeto localmente, são necessários:
 ### 1. Clonar o repositório
 
 ```bash
-git clone <URL_DO_REPOSITORIO>
-cd <PASTA_DO_PROJETO>
+git clone <[URL_DO_REPOSITORIO](https://github.com/delvismorais/GameAO/)>
+cd <GameAO>
 ```
 
 ### 2. Instalar as dependências
