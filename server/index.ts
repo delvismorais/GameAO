@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import type { ViteDevServer } from 'vite';
-import { getPool, hasDatabaseUrl } from './db';
+import { getPool, hasDatabaseUrl, withConnection } from './db';
 import { initializePersistence } from './bootstrap';
 import { authenticateUser, clearSessionCookie, createSession, destroySession, getAuthenticatedUser, isAdmin, registerUser } from './auth';
 import { createInvoicePdf, type InvoiceTemplate } from './invoices';
@@ -22,7 +22,7 @@ import {
   startNotificationWorker,
   type OrderStatus,
 } from './notifications';
-import { getPrivateObjectUrl, putMediaObject } from './storage';
+import { deleteMediaObject, getPrivateObjectUrl, putMediaObject } from './storage';
 import { registerCommunicationRoutes } from './routes/communication';
 import { registerAdminModuleRoutes } from './routes/admin-modules';
 import { registerReviewRoutes } from './routes/reviews';
@@ -827,6 +827,36 @@ app.get('/api/admin/products', asyncRoute(async (request, response) => {
   response.json({ products: await readCatalogProducts(true) });
 }));
 
+function mediaKeyFromProductUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const url = value.trim();
+  if (!url.startsWith('/media/')) return null;
+  try { return url.slice('/media/'.length).split('/').map((part) => decodeURIComponent(part)).join('/'); } catch { return null; }
+}
+
+async function removeUnusedProductMedia(product: { image_url?: unknown; image_card_url?: unknown; additional_images_json?: unknown }): Promise<void> {
+  const values = [product.image_url, product.image_card_url];
+  try {
+    const additional = typeof product.additional_images_json === 'string' ? JSON.parse(product.additional_images_json) : product.additional_images_json;
+    if (Array.isArray(additional)) values.push(...additional);
+  } catch { /* imagem adicional inválida não impede a eliminação do produto */ }
+  const keys = [...new Set(values.map(mediaKeyFromProductUrl).filter((key): key is string => Boolean(key)))];
+  for (const key of keys) {
+    const [[media]] = await getPool().query<any[]>(`SELECT id, object_key, visibility FROM media_library WHERE object_key = ? LIMIT 1`, [key]);
+    if (!media) continue;
+    const [usage] = await getPool().query<any[]>(
+      `SELECT COUNT(*) AS total FROM catalog_products WHERE image_url LIKE ? OR image_card_url LIKE ? OR additional_images_json::text LIKE ?
+       UNION ALL SELECT COUNT(*) FROM content_posts WHERE image_url LIKE ? OR image_card_url LIKE ? OR image_thumb_url LIKE ?
+       UNION ALL SELECT COUNT(*) FROM site_banners WHERE image_url LIKE ?`,
+      [`%${key}%`, `%${key}%`, `%${key}%`, `%${key}%`, `%${key}%`, `%${key}%`, `%${key}%`],
+    );
+    const inUse = usage.reduce((total, item: any) => total + Number(item.total ?? 0), 0);
+    if (inUse > 0) continue;
+    await deleteMediaObject(String(media.object_key), media.visibility === 'private' ? 'private' : 'public');
+    await getPool().execute(`DELETE FROM media_library WHERE id = ?`, [media.id]);
+  }
+}
+
 app.post('/api/admin/products', asyncRoute(async (request, response) => {
   if (!requireDatabase(response)) return;
   const user = await requireAdmin(request, response);
@@ -898,12 +928,28 @@ app.delete('/api/admin/products/:id', asyncRoute(async (request, response) => {
   const user = await requireAdmin(request, response);
   if (!user) return;
   const id = String(request.params.id);
-  const [result] = await getPool().execute(`UPDATE catalog_products SET is_active = 0 WHERE id = ?`, [id]);
-  if (!('affectedRows' in result) || result.affectedRows === 0) {
+  const [[product]] = await getPool().query<any[]>(`SELECT id, name, image_url, image_card_url, additional_images_json FROM catalog_products WHERE id = ? LIMIT 1`, [id]);
+  if (!product) {
     response.status(404).json({ error: 'product_not_found', message: 'Produto não encontrado.' });
     return;
   }
-  await recordAudit(user.id, 'deactivate', 'product', id);
+  const [[orderUsage]] = await getPool().query<any[]>(`SELECT COUNT(*) AS total FROM shop_order_items WHERE product_id = ?`, [id]);
+  if (Number(orderUsage?.total ?? 0) > 0) {
+    response.status(409).json({ error: 'product_has_orders', message: 'Este produto já aparece em encomendas e não pode ser eliminado. Desative-o para o retirar da loja.' });
+    return;
+  }
+  await withConnection(async (connection) => {
+    await connection.beginTransaction();
+    try {
+      await connection.execute(`DELETE FROM catalog_products WHERE id = ?`, [id]);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    }
+  });
+  await removeUnusedProductMedia(product);
+  await recordAudit(user.id, 'delete', 'product', id, { name: product.name, mediaCleanup: true });
   response.status(204).end();
 }));
 

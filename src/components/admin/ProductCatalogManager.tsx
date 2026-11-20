@@ -77,11 +77,20 @@ export function ProductCatalogManager({ products, rate, onRefresh, onMessage, op
     const response = await fetch(`/api/admin/products/${encodeURIComponent(product.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ isActive: !product.isActive }) });
     if (response.ok) { onMessage(product.isActive ? 'Produto desativado.' : 'Produto ativado.'); await onRefresh(); }
   };
+  const deleteProduct = async (product: AdminProduct) => {
+    if (!window.confirm(`Eliminar definitivamente “${product.name}”? As imagens exclusivas também serão removidas do armazenamento. Esta ação não pode ser desfeita.`)) return;
+    const response = await fetch(`/api/admin/products/${encodeURIComponent(product.id)}`, { method: 'DELETE', credentials: 'include' });
+    const data = await response.json().catch(() => null) as { message?: string } | null;
+    if (!response.ok) { onMessage(data?.message ?? 'Não foi possível eliminar o produto.'); return; }
+    onMessage('Produto eliminado e imagens exclusivas removidas.');
+    await onRefresh();
+  };
   const productActions = (product: AdminProduct) => (
     <div className="admin-row-actions admin-product-actions">
       <button type="button" className="btn btn--outline btn--sm" onClick={() => window.open(`/product/${encodeURIComponent(product.slug)}`, '_blank', 'noopener,noreferrer')}>Ver</button>
       <button type="button" className="btn btn--outline btn--sm" onClick={() => void edit(product)}>Editar</button>
       <button type="button" className="btn btn--outline btn--sm" onClick={() => void toggleActive(product)}>{product.isActive ? 'Desativar' : 'Ativar'}</button>
+      <button type="button" className="btn btn--outline btn--sm" onClick={() => void deleteProduct(product)}>Eliminar</button>
     </div>
   );
   return <div className="admin-grid admin-products-grid admin-products-grid--single">
