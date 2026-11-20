@@ -1,59 +1,191 @@
-# GameAO
+# 🎮 GameAO
 
-A GameAO é uma loja digital de videojogos e produtos para jogadores em Angola. O projeto combina catálogo, compras, atendimento, conteúdos e operação administrativa numa aplicação web responsiva em português de Angola.
+### A tua loja digital de gaming em Angola.
 
-**Autoria:** Delvis de Morais — CEO & Fundador e programador.
+A **GameAO** é uma plataforma digital dedicada ao universo dos videojogos, criada para aproximar os jogadores angolanos dos produtos, serviços e experiências que mais gostam.
 
-## Destaques
+Mais do que uma loja online, a GameAO procura oferecer uma experiência de compra simples, intuitiva e acessível, reunindo produtos digitais e físicos, assinaturas, conteúdos e serviços para jogadores numa única plataforma.
 
-- Catálogo com categorias, pesquisa, filtros, ordenação, produtos digitais e físicos.
-- Preços nativos em kwanzas: o valor digitado no painel é o valor exibido e cobrado. Por exemplo, `1340` resulta em `1 340,00 Kz`, tanto no produto como nas variantes, carrinho, checkout e fatura.
-- Carrinho persistente, variantes, lista de desejos, comparação e checkout.
-- Criação e acompanhamento de encomendas, comprovativos de pagamento e faturas PDF.
-- Contas de clientes, histórico de compras, favoritos e programa de afiliados.
-- Painel administrativo para catálogo, categorias, stock, encomendas, conteúdo, notificações e configurações da loja.
-- SEO, dados estruturados, blog, FAQs, assistência ao cliente e endpoint de saúde.
+Desenvolvida com foco no mercado angolano, a aplicação apresenta uma experiência adaptada à realidade local, com preços em kwanzas (AOA/Kz), navegação em português e uma estrutura preparada para facilitar tanto a experiência dos clientes como a gestão da loja.
 
-## Arquitetura
+---
 
-O frontend usa **React 19**, **Vite 7**, **TypeScript** e React Router. A API é servida por **Express 5** e acede à base de dados PostgreSQL através de `pg`; o adaptador traduz parte do SQL legado para manter compatibilidade com o esquema existente. Os documentos PDF são gerados com `pdfkit` e as notificações podem usar SMTP e WhatsApp quando as respetivas credenciais estão configuradas.
+## ✨ Funcionalidades
+
+A GameAO reúne ferramentas de compra, gestão e relacionamento com os clientes.
+
+### 🛒 Experiência de compra
+- Catálogo de produtos digitais e físicos.
+- Categorias, pesquisa, filtros e ordenação de produtos.
+- Gestão de variantes e opções de produtos.
+- Carrinho de compras persistente.
+- Lista de desejos e comparação de produtos.
+- Checkout e criação de encomendas.
+- Acompanhamento do estado das encomendas.
+- Envio de comprovativos de pagamento.
+- Geração de faturas em PDF.
+
+### 👤 Área do cliente
+- Registo e autenticação de utilizadores.
+- Perfil e gestão da conta.
+- Histórico de compras e encomendas.
+- Produtos favoritos.
+- Programa de afiliados.
+- Acompanhamento das compras realizadas.
+
+### ⚙️ Painel administrativo
+- Gestão de produtos e variantes.
+- Gestão de categorias e stock.
+- Gestão e acompanhamento de encomendas.
+- Administração de conteúdos e notificações.
+- Configurações gerais da loja.
+- Gestão operacional centralizada.
+
+### 🚀 Recursos adicionais
+- Otimização para mecanismos de pesquisa (SEO).
+- Dados estruturados.
+- Blog e conteúdos informativos.
+- Perguntas frequentes (FAQs).
+- Assistência ao cliente.
+- Endpoint de monitorização da aplicação e da base de dados.
+
+---
+
+## 🧩 Tecnologias e arquitetura
+
+A GameAO utiliza uma arquitetura web moderna, organizada entre frontend, backend e base de dados.
+
+| Camada | Tecnologia |
+|---|---|
+| Frontend | React 19 |
+| Ferramenta de desenvolvimento | Vite 7 |
+| Linguagem | TypeScript |
+| Navegação | React Router |
+| Backend | Node.js e Express 5 |
+| Base de dados | PostgreSQL |
+| Acesso à base de dados | `pg` |
+| Geração de documentos | PDFKit |
+| Gestor de pacotes | pnpm |
+
+### Estrutura do projeto
 
 ```text
-src/                    Frontend React, páginas, contexto e componentes
-server/                 API Express, autenticação e serviços
-server/migrations/      Migrações SQL versionadas
-public/assets/          Logótipo, imagens e foto do fundador
-docs/                   Documentação técnica
+GameAO/
+│
+├── src/                    # Frontend React, páginas, contexto e componentes
+│
+├── server/                 # API Express, autenticação e serviços
+│   └── migrations/         # Migrações SQL versionadas
+│
+├── public/
+│   └── assets/             # Logótipos, imagens e recursos visuais
+│
+├── docs/                   # Documentação técnica
+│
+├── .env.example            # Modelo das variáveis de ambiente
+├── package.json            # Dependências e scripts
+└── README.md               # Documentação principal
 ```
 
-## Preços em AOA/Kz
+O backend disponibiliza a API e comunica com a base de dados PostgreSQL através de `pg`. Existe também um adaptador responsável por traduzir parte do SQL legado, mantendo a compatibilidade com o esquema existente.
 
-As colunas históricas `base_price_usd`, `sale_price_usd`, `price_usd` e `original_price_usd` permanecem no esquema apenas por compatibilidade, mas o seu significado atual é **AOA/Kz**. Não existe conversão cambial no catálogo. A migração `0016_native_aoa_prices.sql` documenta esta regra. A taxa cambial histórica não altera produtos, variantes, carrinho nem pedidos novos.
+Os documentos PDF são gerados com PDFKit. As notificações podem utilizar SMTP e WhatsApp, desde que as respetivas credenciais e integrações estejam configuradas.
 
-## Desenvolvimento local
+---
 
-Requisitos: Node.js 20+, pnpm e uma base de dados PostgreSQL acessível.
+## 💰 Sistema de preços — AOA/Kz
+
+A GameAO utiliza o **kwanza angolano (AOA/Kz)** como moeda principal do catálogo.
+
+O sistema foi preparado para trabalhar com preços nativos em kwanzas, ou seja, o valor introduzido no painel administrativo corresponde diretamente ao valor apresentado ao cliente.
+
+Por exemplo:
+
+```text
+Valor introduzido no painel: 1340
+
+Valor apresentado na loja: 1 340,00 Kz
+```
+
+Esta regra aplica-se aos produtos, variantes, carrinho, checkout e faturas.
+
+As colunas históricas `base_price_usd`, `sale_price_usd`, `price_usd` e `original_price_usd` permanecem na estrutura da base de dados por motivos de compatibilidade, mas o seu significado atual é AOA/Kz.
+
+Não existe conversão cambial no catálogo. A migração `0016_native_aoa_prices.sql` documenta esta alteração e a taxa cambial histórica não altera os preços dos produtos, variantes, carrinhos ou novas encomendas.
+
+---
+
+## 🛠️ Instalação e desenvolvimento local
+
+Para executar o projeto localmente, são necessários:
+
+- Node.js 20 ou superior.
+- pnpm.
+- Uma base de dados PostgreSQL acessível.
+
+### 1. Clonar o repositório
+
+```bash
+git clone <URL_DO_REPOSITORIO>
+cd <PASTA_DO_PROJETO>
+```
+
+### 2. Instalar as dependências
 
 ```bash
 pnpm install
+```
+
+### 3. Configurar as variáveis de ambiente
+
+Crie o ficheiro `.env` a partir do modelo disponibilizado:
+
+```bash
 cp .env.example .env
+```
+
+Configure as variáveis necessárias, incluindo a ligação à base de dados, sessão e integrações opcionais.
+
+### 4. Iniciar a aplicação
+
+```bash
 pnpm dev
 ```
 
-A aplicação fica disponível, por defeito, em `http://localhost:3000`. Para validar o projeto: 
+Por defeito, a aplicação fica disponível em:
+
+```text
+http://localhost:3000
+```
+
+### 5. Validar o projeto
+
+Para verificar os tipos e gerar a versão de produção:
 
 ```bash
 pnpm typecheck
 pnpm build
 ```
 
-O servidor também pode ser iniciado com `pnpm start`. O endpoint `/_app/health` informa o estado da aplicação e da base de dados.
+O servidor também pode ser iniciado em modo de execução com:
 
-## Configuração
+```bash
+pnpm start
+```
 
-Nunca coloque palavras-passe, tokens ou chaves no código. Configure no ambiente de execução as variáveis presentes em `.env.example`, incluindo `DATABASE_URL`, sessão, SMTP e integrações opcionais. O ficheiro `.env` não deve ser versionado.
+---
 
-Para criar o primeiro administrador, use credenciais apenas no terminal ou no gestor de segredos:
+## 🔐 Configuração e segurança
+
+As credenciais e informações sensíveis devem ser configuradas através de variáveis de ambiente.
+
+**Nunca coloque palavras-passe, tokens, chaves de API ou outros segredos diretamente no código-fonte.**
+
+O ficheiro `.env` não deve ser enviado para o repositório.
+
+### Criar o primeiro administrador
+
+A inicialização da primeira conta administrativa pode ser realizada através do seguinte comando:
 
 ```bash
 GAMEAO_ADMIN_EMAIL="admin@exemplo.ao" \
@@ -62,18 +194,109 @@ GAMEAO_ADMIN_NAME="Administrador" \
 pnpm admin:init
 ```
 
-Depois, aceda a `/admin` com uma conta administrativa.
+Depois da criação da conta, o painel administrativo pode ser acedido em:
 
-## Operação e dados
+```text
+/admin
+```
 
-As migrações são aplicadas pelo bootstrap do servidor. O catálogo público e o painel usam a mesma base de dados, por isso operações manuais devem ser feitas com cautela. Pagamentos por cartão não são ativados sem fornecedor, credenciais e validação do fluxo; o sistema atual regista encomendas e comprovativos sem guardar dados de cartão.
+Utilize as credenciais configuradas durante a inicialização.
 
-## Contactos
+---
 
-- Email: geral@gameao.shop
-- Telefone/WhatsApp: 973 929 712
-- Localização: Luanda, Angola
+## 🗄️ Operação e base de dados
 
-## Licença e conteúdos
+As migrações SQL são aplicadas durante o processo de inicialização do servidor.
 
-Este repositório contém a implementação da GameAO e os seus assets. Nomes, capas, marcas e imagens de jogos pertencem aos respetivos titulares; confirme os direitos de utilização antes de redistribuir qualquer conteúdo.
+O catálogo público e o painel administrativo utilizam a mesma base de dados. Por esse motivo, alterações manuais devem ser realizadas com cuidado e, preferencialmente, acompanhadas de cópias de segurança.
+
+O endpoint de monitorização da aplicação está disponível em:
+
+```text
+/_app/health
+```
+
+Este endpoint permite consultar o estado da aplicação e da ligação à base de dados.
+
+### Pagamentos
+
+O sistema permite registar encomendas e respetivos comprovativos de pagamento.
+
+A utilização de pagamentos por cartão depende da integração de um fornecedor, da configuração das credenciais necessárias e da validação completa do fluxo de pagamento.
+
+Atualmente, a aplicação não guarda dados de cartões bancários.
+
+---
+
+## 👨‍💻 Autor e fundador
+
+A GameAO foi idealizada e desenvolvida por **Delvis de Morais**, responsável pela sua fundação, direção e desenvolvimento de software.
+
+<table>
+  <tr>
+    <td width="140" align="center" valign="middle">
+      <img src="https://delvisfolio-ka5a62ww.manus.space/favicon.png" alt="Delvis de Morais" width="110" />
+    </td>
+    <td valign="middle">
+      <strong>Delvis de Morais</strong><br/>
+      CEO &amp; Fundador · Programador<br/><br/>
+      Criador e principal responsável pelo desenvolvimento da GameAO, desde a conceção da ideia até à implementação tecnológica da plataforma.<br/><br/>
+      <a href="https://delvisdemorais.link/">Portfólio pessoal</a>
+    </td>
+  </tr>
+</table>
+
+### Contactos do autor
+
+- **Email:** [delvisdemorais@proton.me](mailto:delvisdemorais@proton.me)
+- **Angola:** [+244 973 929 712](tel:+244973929712)
+- **Brasil:** [+554799737493](tel:+554799737493)
+- **Website:** [delvisdemorais.link](https://delvisdemorais.link/)
+
+---
+
+## ❤️ Apoie a GameAO
+
+A GameAO é um projeto em evolução. O apoio da comunidade ajuda a manter a plataforma, desenvolver novas funcionalidades, melhorar os serviços e proporcionar uma experiência cada vez melhor aos jogadores angolanos.
+
+Caso pretenda contribuir voluntariamente para o desenvolvimento do projeto, pode utilizar o seguinte meio:
+
+**Express — Angola**
+
+```text
+Número: 973929712
+```
+
+Todo o apoio é bem-vindo e contribui para o crescimento da GameAO. Obrigado por fazer parte desta iniciativa!
+
+---
+
+## 📌 Contribuições
+
+A GameAO é um projeto em desenvolvimento contínuo.
+
+Sugestões, identificação de problemas e propostas de melhoria são importantes para a evolução da plataforma.
+
+Caso pretenda contribuir com o projeto, pode apresentar uma sugestão ou reportar um problema através das ferramentas de Issues e Pull Requests do GitHub, respeitando a organização e as orientações do repositório.
+
+**Autor principal e mantenedor:** Delvis de Morais.
+
+---
+
+## © Direitos e conteúdos
+
+Este repositório contém a implementação da plataforma GameAO e os respetivos recursos de desenvolvimento.
+
+Os nomes, marcas, logótipos, capas, imagens e outros conteúdos relacionados com videojogos pertencem aos seus respetivos titulares.
+
+A presença desses elementos na plataforma não representa necessariamente uma parceria, associação ou afiliação oficial com as respetivas empresas ou editoras.
+
+Antes de redistribuir qualquer conteúdo, confirme que possui os direitos ou as autorizações necessárias.
+
+---
+
+<p align="center">
+  <strong>GameAO — O universo gaming mais perto de ti. 🎮</strong><br/>
+  - **Website:** [GameAO.shop](https://gameao.shop/)
+  Desenvolvido com dedicação em Angola 🇦🇴
+</p>
