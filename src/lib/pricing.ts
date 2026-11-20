@@ -1,12 +1,11 @@
 /**
- * Única fonte de conversão e formatação monetária do website.
+ * Única fonte de formatação monetária do website.
  * Todos os preços visíveis devem passar por estas funções.
  */
 
-/** Conversão interna dos preços-base para a moeda padrão de apresentação da loja. */
-export function usdToAoa(usd: number, rate: number): number {
-  if (!Number.isFinite(usd) || !Number.isFinite(rate) || rate <= 0) return 0;
-  return Math.round(usd * rate * 100) / 100;
+/** Compatibilidade histórica: os preços do catálogo já são valores nativos em AOA/Kz. */
+export function usdToAoa(value: number, _rate?: number): number {
+  return Number.isFinite(value) ? value : 0;
 }
 
 function formatKz(value: number): string {
@@ -18,9 +17,9 @@ export function formatAoa(value: number): string {
   return formatKz(value);
 }
 
-/** Formata o preço base na moeda padrão Kz. */
-export function formatUsdAsAoa(usd: number, rate = 913): string {
-  return formatKz(usdToAoa(usd, rate));
+/** Compatibilidade histórica: formata diretamente o valor nativo em AOA/Kz, sem conversão. */
+export function formatUsdAsAoa(value: number, _rate?: number): string {
+  return formatKz(value);
 }
 
 /** Percentagem de desconto inteira (ex.: 34). */

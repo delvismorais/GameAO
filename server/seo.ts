@@ -115,7 +115,7 @@ async function metaForPath(pathname: string, base: string): Promise<Meta> {
           offers: {
             '@type': 'Offer',
             price: money(price),
-            priceCurrency: 'USD',
+            priceCurrency: 'AOA',
             availability:
               product.stock_quantity != null && Number(product.stock_quantity) <= 0
                 ? 'https://schema.org/OutOfStock'

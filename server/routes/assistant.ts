@@ -17,10 +17,10 @@ function jsonValue(value: unknown, fallback: unknown = {}): any {
 function safeText(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
-function price(value: unknown, rate: number): string {
+function price(value: unknown, _rate?: number): string {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return 'preço não indicado';
-  const aoa = Math.round(amount * rate * 100) / 100;
+  const aoa = amount;
   return `${new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(aoa)} Kz`;
 }
 function scoreProduct(product: any, query: string): number {
@@ -52,7 +52,7 @@ async function publicContext(query: string): Promise<string> {
       name: safeText(row.name, 120),
       slug: safeText(row.slug, 120),
       categories: safeText(row.category_names, 180),
-      price: price(row.sale_price_usd ?? row.base_price_usd, exchangeRate),
+      price: price(row.sale_price_usd ?? row.base_price_usd),
       description: safeText(row.short_description, 220),
       tags: Array.isArray(jsonValue(row.tags_json, [])) ? jsonValue(row.tags_json, []).map((tag: unknown) => safeText(tag, 60)).filter(Boolean).slice(0, 10) : [],
       url: `/product/${encodeURIComponent(String(row.slug ?? ''))}`,

@@ -152,7 +152,7 @@ export function Account() {
                     <li key={order.id}>
                       <span>{order.id}</span>
                       <span>{formatDatePt(order.createdAt)}</span>
-                      <strong>{formatUsdAsAoa(order.totalAoa / order.exchangeRate, order.exchangeRate)}</strong>
+                      <strong>{formatUsdAsAoa(order.totalAoa)}</strong>
                       <Link to={`/pedido?order=${encodeURIComponent(order.id)}`}>Ver</Link>
                     </li>
                   ))}

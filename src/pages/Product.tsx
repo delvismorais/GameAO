@@ -41,7 +41,7 @@ export function Product() {
           description: product.shortDescription,
           image: product.image,
           brand: { '@type': 'Brand', name: 'GameAO' },
-          offers: { '@type': 'Offer', price: seoPrice.toFixed(2), priceCurrency: 'USD', availability: 'https://schema.org/InStock' },
+          offers: { '@type': 'Offer', price: seoPrice.toFixed(2), priceCurrency: 'AOA', availability: 'https://schema.org/InStock' },
         }
       : undefined,
   });

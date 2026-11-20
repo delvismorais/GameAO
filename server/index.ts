@@ -536,11 +536,9 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
     if (!selectedMethod) { response.status(400).json({ error: 'invalid_payment_method', message: 'O método de pagamento selecionado não está disponível.' }); return; }
     paymentMethod = selectedMethod;
   }
-  const [settingRows] = await getPool().query<any[]>(`SELECT value_json FROM site_settings WHERE setting_key = 'exchange_rate' LIMIT 1`);
-  const rawSetting = settingRows[0]?.value_json;
-  const setting = typeof rawSetting === 'string' ? JSON.parse(rawSetting) : rawSetting;
-  const parsedRate = Number(setting?.usdToAoa ?? 913);
-  const rate = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 913;
+  // Os preços do catálogo são introduzidos e armazenados diretamente em AOA/Kz.
+  // Mantemos 1 apenas para compatibilidade com a coluna histórica da encomenda.
+  const rate = 1;
   const connection = await getPool().getConnection();
   try {
     await connection.beginTransaction();
@@ -577,7 +575,7 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
       const playerId = typeof raw.playerId === 'string' && raw.playerId.trim() ? raw.playerId.trim().slice(0, 120) : null;
       const playerNickname = typeof raw.playerNickname === 'string' && raw.playerNickname.trim() ? raw.playerNickname.trim().slice(0, 180) : null;
       if (requiresPlayer && !playerId) { await connection.rollback(); response.status(400).json({ error: 'player_id_required', message: `O ID do jogador é obrigatório para ${product.name}.` }); return; }
-      items.push({ id: product.id, variantId: variant?.id ?? null, variantName: variant?.name ?? null, name: product.name, unit, qty, subtotal: unit * qty * rate, categoryType: product.category_type ?? 'digital', productSubtype: product.product_subtype ?? 'digital_game', shipping: product.category_type === 'physical' ? Math.max(0, Number(product.shipping_cost_aoa ?? 0)) : 0, playerId, playerNickname, image: product.image_card_url });
+      items.push({ id: product.id, variantId: variant?.id ?? null, variantName: variant?.name ?? null, name: product.name, unit, qty, subtotal: unit * qty, categoryType: product.category_type ?? 'digital', productSubtype: product.product_subtype ?? 'digital_game', shipping: product.category_type === 'physical' ? Math.max(0, Number(product.shipping_cost_aoa ?? 0)) : 0, playerId, playerNickname, image: product.image_card_url });
       if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
         const prior = stockRequirements.get(String(product.id));
         stockRequirements.set(String(product.id), { quantity: (prior?.quantity ?? 0) + qty, name: String(product.name) });
@@ -643,7 +641,7 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
       await connection.execute(`UPDATE coupons SET used_count = used_count + 1, updated_at = NOW() WHERE id = ?`, [coupon.id]);
       await connection.execute(`INSERT INTO coupon_redemptions (coupon_id, order_id, user_id, discount_aoa) VALUES (?, ?, ?, ?) ON CONFLICT (coupon_id, order_id) DO NOTHING`, [coupon.id, orderId, user?.id ?? null, discount]);
     }
-    for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, variant_id, variant_name, unit_price_aoa, quantity, subtotal_aoa, player_id, player_nickname, category_type, product_subtype, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.variantId, item.variantName, item.unit * rate, item.qty, item.subtotal, item.playerId, item.playerNickname, item.categoryType, item.productSubtype, item.image]);
+    for (const item of items) await connection.execute(`INSERT INTO shop_order_items (order_id, product_id, product_name, variant_id, variant_name, unit_price_aoa, quantity, subtotal_aoa, player_id, player_nickname, category_type, product_subtype, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [orderId, item.id, item.name, item.variantId, item.variantName, item.unit, item.qty, item.subtotal, item.playerId, item.playerNickname, item.categoryType, item.productSubtype, item.image]);
     await connection.execute(`INSERT INTO shop_order_status_history (order_id, from_status, to_status, note, changed_by_user_id) VALUES (?, NULL, 'awaiting_payment', 'Encomenda criada no checkout.', ?)`, [orderId, user?.id ?? null]);
     await connection.commit();
     const referralCode = String(body.affiliateCode ?? body.ref ?? '').trim();

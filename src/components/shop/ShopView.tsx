@@ -359,8 +359,8 @@ export function ShopView({ category }: ShopViewProps) {
                   {catParam && <button type="button" onClick={() => updateParams({ cat: null })}>{availableCategories.find((item) => item.slug === catParam)?.name ?? catParam} <Icon name="close" /></button>}
                   {tag && <button type="button" onClick={() => updateParams({ tag: null })}>{tag} <Icon name="close" /></button>}
                   {rating > 0 && <button type="button" onClick={() => updateParams({ rating: null })}>{rating}★ e acima <Icon name="close" /></button>}
-                  {min > 0 && <button type="button" onClick={() => updateParams({ min: null })}>Mín. {formatUsdAsAoa(min / rate, rate)} <Icon name="close" /></button>}
-                  {max > 0 && <button type="button" onClick={() => updateParams({ max: null })}>Máx. {formatUsdAsAoa(max / rate, rate)} <Icon name="close" /></button>}
+                  {min > 0 && <button type="button" onClick={() => updateParams({ min: null })}>Mín. {formatUsdAsAoa(min)} <Icon name="close" /></button>}
+                  {max > 0 && <button type="button" onClick={() => updateParams({ max: null })}>Máx. {formatUsdAsAoa(max)} <Icon name="close" /></button>}
                   <button type="button" className="shop-clear" onClick={clearFilters}>Limpar tudo</button>
                 </div>
               )}
