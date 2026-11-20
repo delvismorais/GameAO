@@ -32,6 +32,7 @@ import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } fr
 import { hasCapability, rateLimit, sameOriginGuard, securityHeaders, type Capability } from './security';
 import { registerMediaRoutes } from './media';
 import { injectSeo, registerSeoRoutes } from './seo';
+import { isFreeFireProduct } from '../src/lib/playerRequirements';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -552,7 +553,7 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
       seenProducts.add(lineKey);
       const qty = Number(raw.qty);
       if (!Number.isInteger(qty) || qty < 1 || qty > 99) { await connection.rollback(); response.status(400).json({ error: 'invalid_quantity', message: 'A quantidade de um dos produtos é inválida.' }); return; }
-      const [[product]] = await connection.query<any[]>(`SELECT id, name, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url, stock_quantity, low_stock_threshold, is_dynamic FROM catalog_products WHERE id = ? AND is_active = 1 FOR UPDATE`, [productId]);
+      const [[product]] = await connection.query<any[]>(`SELECT id, name, platform, sub_category, base_price_usd, sale_price_usd, category_type, product_subtype, requires_player_id, shipping_cost_aoa, image_card_url, stock_quantity, low_stock_threshold, is_dynamic FROM catalog_products WHERE id = ? AND is_active = 1 FOR UPDATE`, [productId]);
       if (!product) { await connection.rollback(); response.status(400).json({ error: 'product_unavailable', message: 'Um dos produtos já não está disponível. Atualize o carrinho.' }); return; }
       if (product.stock_quantity !== null && product.stock_quantity !== undefined && Number(product.stock_quantity) < qty) {
         await connection.rollback();
@@ -571,10 +572,13 @@ app.post('/api/orders', rateLimit({ windowMs: 10 * 60 * 1000, max: 25, message: 
         if (!variant) { await connection.rollback(); response.status(400).json({ error: 'invalid_variant', message: 'A variante selecionada já não está disponível.' }); return; }
       }
       const unit = Number(variant?.price_usd ?? product.sale_price_usd ?? product.base_price_usd);
-      const requiresPlayer = Boolean(product.requires_player_id) || product.product_subtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(String(product.name));
+      const requiresPlayer = Boolean(product.requires_player_id);
+      const requiresFreeFireVerification = requiresPlayer && isFreeFireProduct(product);
       const playerId = typeof raw.playerId === 'string' && raw.playerId.trim() ? raw.playerId.trim().slice(0, 120) : null;
       const playerNickname = typeof raw.playerNickname === 'string' && raw.playerNickname.trim() ? raw.playerNickname.trim().slice(0, 180) : null;
       if (requiresPlayer && !playerId) { await connection.rollback(); response.status(400).json({ error: 'player_id_required', message: `O ID do jogador é obrigatório para ${product.name}.` }); return; }
+      if (requiresFreeFireVerification && !playerNickname) { await connection.rollback(); response.status(400).json({ error: 'player_verification_required', message: `Consulte o ID Free Fire antes de continuar.` }); return; }
+      if (requiresPlayer && !playerNickname) { await connection.rollback(); response.status(400).json({ error: 'player_nickname_required', message: `O nickname é obrigatório para ${product.name}.` }); return; }
       items.push({ id: product.id, variantId: variant?.id ?? null, variantName: variant?.name ?? null, name: product.name, unit, qty, subtotal: unit * qty, categoryType: product.category_type ?? 'digital', productSubtype: product.product_subtype ?? 'digital_game', shipping: product.category_type === 'physical' ? Math.max(0, Number(product.shipping_cost_aoa ?? 0)) : 0, playerId, playerNickname, image: product.image_card_url });
       if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
         const prior = stockRequirements.get(String(product.id));
@@ -843,7 +847,7 @@ app.post('/api/admin/products', asyncRoute(async (request, response) => {
   );
   await getPool().execute(
     `UPDATE catalog_products SET category_type = ?, product_subtype = ?, requires_player_id = ?, sub_category = ?, shipping_cost_aoa = ?, additional_images_json = ?, video_url = ?, is_dynamic = ?, stock_quantity = ?, low_stock_threshold = ?, related_products_json = ?, seo_title = ?, seo_description = ? WHERE id = ?`,
-    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.requiresPlayerId && /free\s*fire/i.test(`${body.platform ?? ''} ${body.name ?? ''} ${body.subCategory ?? ''}`) ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, body.stockQuantity == null || body.stockQuantity === '' ? null : Math.max(0, Number(body.stockQuantity)), Math.max(0, Number(body.lowStockThreshold ?? 5)), JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : []), typeof body.seoTitle === 'string' ? body.seoTitle.trim() || null : null, typeof body.seoDescription === 'string' ? body.seoDescription.trim() || null : null, id],
+    [body.categoryType === 'physical' ? 'physical' : 'digital', ['physical', 'digital_game', 'digital_other'].includes(body.productSubtype) ? body.productSubtype : 'digital_game', body.categoryType !== 'physical' && Boolean(body.requiresPlayerId) ? 1 : 0, typeof body.subCategory === 'string' ? body.subCategory.trim() || null : null, Math.max(0, Number(body.shippingCostAoa ?? 0)), JSON.stringify(Array.isArray(body.additionalImages) ? body.additionalImages.slice(0, 8) : []), typeof body.videoUrl === 'string' ? body.videoUrl.trim() || null : null, body.isDynamic ? 1 : 0, body.stockQuantity == null || body.stockQuantity === '' ? null : Math.max(0, Number(body.stockQuantity)), Math.max(0, Number(body.lowStockThreshold ?? 5)), JSON.stringify(Array.isArray(body.relatedProducts) ? body.relatedProducts : []), typeof body.seoTitle === 'string' ? body.seoTitle.trim() || null : null, typeof body.seoDescription === 'string' ? body.seoDescription.trim() || null : null, id],
   );
   if (Array.isArray(body.categoryIds)) {
     await getPool().execute(`DELETE FROM catalog_product_categories WHERE product_id = ?`, [id]);
@@ -864,7 +868,7 @@ app.put('/api/admin/products/:id', asyncRoute(async (request, response) => {
   const fields: Array<[string, string | number | null]> = [];
   const allowed: Record<string, string> = { name: 'name', slug: 'slug', basePriceUsd: 'base_price_usd', salePriceUsd: 'sale_price_usd', image: 'image_url', imageCard: 'image_card_url', shortDescription: 'short_description', releaseYear: 'release_year', developer: 'developer', platform: 'platform', hot: 'is_hot', shopOrder: 'shop_order', isActive: 'is_active', categoryType: 'category_type', productSubtype: 'product_subtype', requiresPlayerId: 'requires_player_id', subCategory: 'sub_category', shippingCostAoa: 'shipping_cost_aoa', videoUrl: 'video_url', isDynamic: 'is_dynamic', stockQuantity: 'stock_quantity', lowStockThreshold: 'low_stock_threshold', seoTitle: 'seo_title', seoDescription: 'seo_description' };
   for (const [input, column] of Object.entries(allowed)) {
-    if (input in body) fields.push([column, ['hot', 'isActive', 'requiresPlayerId', 'isDynamic'].includes(input) ? (body[input] && (input !== 'requiresPlayerId' || /free\s*fire/i.test(`${body.platform ?? ''} ${body.name ?? ''} ${body.subCategory ?? ''}`)) ? 1 : 0) : body[input] === '' ? null : body[input]]);
+    if (input in body) fields.push([column, ['hot', 'isActive', 'isDynamic'].includes(input) ? (body[input] ? 1 : 0) : input === 'requiresPlayerId' ? (body.categoryType === 'physical' ? 0 : body[input] ? 1 : 0) : body[input] === '' ? null : body[input]]);
   }
   if ('tags' in body) fields.push(['tags_json', JSON.stringify(Array.isArray(body.tags) ? body.tags : [])]);
   if ('description' in body) fields.push(['description_json', JSON.stringify(Array.isArray(body.description) ? body.description : [])]);

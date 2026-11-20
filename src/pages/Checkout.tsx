@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext';
 import { formatUsdAsAoa } from '../lib/pricing';
 import { getEffectivePriceUsd } from '../data/products';
 import { getStoredAffiliateCode, normalizeAffiliateCode } from '../lib/affiliate';
+import { isFreeFireProduct } from '../lib/playerRequirements';
 import { useSeo } from '../lib/seo';
 
 const PROVINCES = ['Bengo', 'Benguela', 'Bié', 'Cabinda', 'Cuando Cubango', 'Cuanza Norte', 'Cuanza Sul', 'Cunene', 'Huambo', 'Huíla', 'Luanda', 'Lunda Norte', 'Lunda Sul', 'Malanje', 'Moxico', 'Namibe', 'Uíge', 'Zaire'];
@@ -54,7 +55,7 @@ export function Checkout() {
   }, [user]);
 
   const physicalLines = useMemo(() => cartLines.filter(({ product }) => product.categoryType === 'physical'), [cartLines]);
-  const playerLines = useMemo(() => cartLines.filter(({ product }) => Boolean(product.requiresPlayerId) || (product.productSubtype === 'digital_game' && /free\s*fire|freefire|garena/i.test(product.name))), [cartLines]);
+  const playerLines = useMemo(() => cartLines.filter(({ product }) => Boolean(product.requiresPlayerId)), [cartLines]);
   const hasPhysical = physicalLines.length > 0;
   const hasDigital = cartLines.some(({ product }) => product.categoryType !== 'physical');
   const totalUsd = cartSubtotalUsd - cartDiscountUsd;
@@ -99,7 +100,7 @@ export function Checkout() {
     event.preventDefault();
     if (submitting) return;
     if (!validate()) { showToast('Verifique os campos assinalados antes de confirmar o pedido.', 'error'); return; }
-    for (const { product } of playerLines) if (!playerNames[product.id]) { showToast(`Verifique o ID de jogador de ${product.name} antes de continuar.`, 'error'); return; }
+    for (const { product } of playerLines) if (!playerNames[product.id]) { showToast(`${isFreeFireProduct(product) ? 'Verifique o ID' : 'Indique o nickname'} de jogador de ${product.name} antes de continuar.`, 'error'); return; }
     setSubmitting(true);
     let response: Response;
     try {
@@ -130,7 +131,7 @@ export function Checkout() {
         </section>}
 
         {playerLines.length > 0 && <section className="checkout-section checkout-section--compact"><div className="checkout-section__intro"><span className="checkout-step">{hasPhysical ? '03' : '02'}</span><div><h2>Dados do jogador</h2><p>Alguns produtos precisam do ID da conta para serem entregues corretamente.</p></div></div>
-          {playerLines.map(({ product }) => <div className="checkout-product-data" key={product.id}><div className="checkout-product-data__heading"><strong>{product.name}</strong><span>ID obrigatório</span></div>{savedPlayerIds.length > 0 && <label className="field"><span>Usar ID guardado</span><select value="" onChange={(event) => { const saved = savedPlayerIds.find((item) => item.player_id === event.target.value); if (!saved) return; setPlayerIds((current) => ({ ...current, [product.id]: saved.player_id })); setPlayerNames((current) => ({ ...current, [product.id]: saved.player_nickname })); }}><option value="">Selecionar do histórico…</option>{savedPlayerIds.map((saved) => <option key={saved.id} value={saved.player_id}>{saved.player_id} — {saved.player_nickname}</option>)}</select></label>}<div className="form-row"><label className="field"><span>ID do jogador *</span><input inputMode="numeric" value={playerIds[product.id] ?? ''} onChange={(event) => { setPlayerIds((current) => ({ ...current, [product.id]: event.target.value })); setPlayerNames((current) => ({ ...current, [product.id]: '' })); }} placeholder="ID numérico da conta" /></label><label className="field"><span>Nickname verificado automaticamente</span><div className="checkout-inline-control"><input value={playerNames[product.id] ?? ''} readOnly placeholder="Faça a consulta para obter o nickname" /><button type="button" className="btn btn--outline btn--sm" disabled={verifyingPlayer === product.id || !playerIds[product.id]} onClick={() => void verifyPlayer(product.id)}>{verifyingPlayer === product.id ? 'A verificar…' : playerNames[product.id] ? 'Verificar novamente' : 'Consultar ID'}</button></div></label></div>{playerNames[product.id] && <p className="checkout-verified-note">✓ Conta confirmada: <strong>{playerNames[product.id]}</strong>. Este ID e nickname serão enviados com a encomenda.</p>}</div>)}
+          {playerLines.map(({ product }) => { const freeFire = isFreeFireProduct(product); return <div className="checkout-product-data" key={product.id}><div className="checkout-product-data__heading"><strong>{product.name}</strong><span>{freeFire ? 'ID obrigatório + verificação' : 'ID e nickname obrigatórios'}</span></div>{freeFire && savedPlayerIds.length > 0 && <label className="field"><span>Usar ID guardado</span><select value="" onChange={(event) => { const saved = savedPlayerIds.find((item) => item.player_id === event.target.value); if (!saved) return; setPlayerIds((current) => ({ ...current, [product.id]: saved.player_id })); setPlayerNames((current) => ({ ...current, [product.id]: saved.player_nickname })); }}><option value="">Selecionar do histórico…</option>{savedPlayerIds.map((saved) => <option key={saved.id} value={saved.player_id}>{saved.player_id} — {saved.player_nickname}</option>)}</select></label>}<div className="form-row"><label className="field"><span>ID do jogador *</span><input inputMode="numeric" value={playerIds[product.id] ?? ''} onChange={(event) => { setPlayerIds((current) => ({ ...current, [product.id]: event.target.value })); setPlayerNames((current) => ({ ...current, [product.id]: '' })); }} placeholder="ID numérico da conta" /></label>{freeFire ? <label className="field"><span>Nickname verificado automaticamente</span><div className="checkout-inline-control"><input value={playerNames[product.id] ?? ''} readOnly placeholder="Faça a consulta para obter o nickname" /><button type="button" className="btn btn--outline btn--sm" disabled={verifyingPlayer === product.id || !playerIds[product.id]} onClick={() => void verifyPlayer(product.id)}>{verifyingPlayer === product.id ? 'A verificar…' : playerNames[product.id] ? 'Verificar novamente' : 'Consultar ID'}</button></div></label> : <label className="field"><span>Nickname *</span><input value={playerNames[product.id] ?? ''} onChange={(event) => setPlayerNames((current) => ({ ...current, [product.id]: event.target.value }))} placeholder="Digite o nickname da conta" /></label>}</div>{playerNames[product.id] && <p className="checkout-verified-note">{freeFire ? '✓ Conta confirmada:' : 'Nickname indicado:'} <strong>{playerNames[product.id]}</strong>. Este ID e nickname serão enviados com a encomenda.</p>}</div>; })}
         </section>}
 
         <section className="checkout-section checkout-section--compact"><div className="checkout-section__intro"><span className="checkout-step">{hasPhysical || playerLines.length ? '04' : '02'}</span><div><h2>Produtos e observações</h2><p>Reveja variantes e deixe uma nota, se necessário.</p></div></div>
