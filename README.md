@@ -235,7 +235,7 @@ A GameAO foi idealizada e desenvolvida por **Delvis de Morais**, responsável pe
 <table>
   <tr>
     <td width="140" align="center" valign="middle">
-      <img src="https://delvisfolio-ka5a62ww.manus.space/favicon.png" alt="Delvis de Morais" width="110" />
+      <img src="https://1.gravatar.com/avatar/3284dd19b9b7cb34c553f0f99bb732ca4a0a2a80f966c1b19e9aeaa77b75f724?size=256&d=initials" alt="Delvis de Morais" width="110" />
     </td>
     <td valign="middle">
       <strong>Delvis de Morais</strong><br/>
@@ -297,6 +297,6 @@ Antes de redistribuir qualquer conteúdo, confirme que possui os direitos ou as 
 
 <p align="center">
   <strong>GameAO — O universo gaming mais perto de ti. 🎮</strong><br/>
-  - **Website:** [GameAO.shop](https://gameao.shop/)
+  Website: https://gameao.shop
   Desenvolvido com dedicação em Angola 🇦🇴
 </p>
