@@ -262,7 +262,7 @@ export function registerAdminModuleRoutes(app: Express, deps: RouteDeps): void {
       headers = ['ID', 'Nome', 'Email', 'Telefone', 'Criado', 'Ultimo acesso'];
       [rows] = await getPool().query<any[]>(`SELECT id, name, email, phone, created_at, last_login_at FROM app_users WHERE role = 'customer' ORDER BY created_at DESC`);
     } else if (type === 'products') {
-      headers = ['ID', 'Nome', 'Slug', 'Preco USD', 'Promocao USD', 'Stock', 'Ativo'];
+      headers = ['ID', 'Nome', 'Slug', 'Preço (Kz)', 'Promoção (Kz)', 'Stock', 'Ativo'];
       [rows] = await getPool().query<any[]>(`SELECT id, name, slug, base_price_usd, sale_price_usd, stock_quantity, is_active FROM catalog_products ORDER BY name ASC`);
     } else {
       headers = ['Numero', 'Cliente', 'Email', 'Telefone', 'Total AOA', 'Estado', 'Pagamento', 'Metodo', 'Criado'];

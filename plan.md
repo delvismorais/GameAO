@@ -53,7 +53,7 @@ Esta fase mantém o shell administrativo próprio do GameAO e usa a demonstraç�
 
 ## 4.1. Evolução operacional aprovada
 
-- **Servidor e base de dados**: ativar `features.server` e `features.database` da Manus. Usar migrações determinísticas, aditivas e versionadas; preservar os produtos, conteúdos e imagens atuais durante a importação.
+- **Servidor e base de dados**: ativar `features.server` e `features.database` da ambiente de execução. Usar migrações determinísticas, aditivas e versionadas; preservar os produtos, conteúdos e imagens atuais durante a importação.
 - **Autenticação própria**: contas com email, palavra-passe com hashing seguro, recuperação de palavra-passe, sessões protegidas, validação de campos, proteção contra tentativas abusivas e separação rigorosa entre clientes e administradores. Não transportar credenciais do repositório MD Recargas.
 - **Modelo de negócio**: manter o catálogo atual de videojogos do GameAO na primeira migração. O modelo deverá suportar stock, disponibilidade, categorias, plataformas, etiquetas, galerias, produtos relacionados, destaque e variantes futuras sem trocar a aparência dos cartões.
 - **Painel administrativo**: dashboard e CRUD real para produtos, categorias, imagens, banners, homepage, artigos, páginas institucionais, encomendas, clientes, avaliações, cupões, configurações e administradores/permissões. Cada alteração deve refletir-se na loja através da mesma base de dados.
@@ -87,7 +87,7 @@ src/
   styles/                    base.css, layout.css, components.css, pages.css
 public/
   assets/                    Imagens e fontes originais
-  manus-routes.json          Manifesto de rotas
+  ambiente de execução-routes.json          Manifesto de rotas
 ```
 
 ## 6. Comportamento por página

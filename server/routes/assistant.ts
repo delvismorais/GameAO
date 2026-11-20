@@ -34,11 +34,10 @@ async function publicContext(query: string): Promise<string> {
     getPool().query<any[]>(`SELECT p.id, p.slug, p.name, p.base_price_usd, p.sale_price_usd, p.short_description, p.tags_json, STRING_AGG(c.name, ', ' ORDER BY c.sort_order, c.name) AS category_names FROM catalog_products p LEFT JOIN catalog_product_categories pc ON pc.product_id = p.id LEFT JOIN catalog_categories c ON c.id = pc.category_id WHERE p.is_active = 1 GROUP BY p.id ORDER BY p.shop_order ASC, p.name ASC LIMIT 400`),
     getPool().query<any[]>(`SELECT c.name, c.slug, c.description, COUNT(p.id) FILTER (WHERE p.is_active = 1) AS product_count FROM catalog_categories c LEFT JOIN catalog_product_categories pc ON pc.category_id = c.id LEFT JOIN catalog_products p ON p.id = pc.product_id WHERE c.is_active = 1 GROUP BY c.id ORDER BY c.sort_order ASC, c.name ASC LIMIT 100`),
     getPool().query<any[]>(`SELECT title, slug, excerpt, category, published_date FROM content_posts WHERE status = 'published' ORDER BY published_date DESC, created_at DESC LIMIT 15`),
-    getPool().query<any[]>(`SELECT setting_key, value_json FROM site_settings WHERE setting_key IN ('site_config', 'faq', 'delivery_config', 'store_status', 'exchange_rate') LIMIT 5`),
+    getPool().query<any[]>(`SELECT setting_key, value_json FROM site_settings WHERE setting_key IN ('site_config', 'faq', 'delivery_config', 'store_status') LIMIT 5`),
   ]);
   const settingsByKey = Object.fromEntries(settings.map((row) => [String(row.setting_key), jsonValue(row.value_json)]));
   const site = settingsByKey.site_config ?? {};
-  const exchangeRate = Number(settingsByKey.exchange_rate?.usdToAoa) > 0 ? Number(settingsByKey.exchange_rate.usdToAoa) : 913;
   const managedFaq = Array.isArray(settingsByKey.faq) ? settingsByKey.faq.filter((item: any) => item?.question && item?.answer) : [];
   const faqSource = managedFaq.length ? managedFaq : FAQ_ACCORDION.map((item) => ({ question: item.q, answer: item.a }));
   const faq = faqSource.slice(0, 20).map((item: any) => ({ question: safeText(item.question, 180), answer: safeText(item.answer, 700) }));
@@ -72,7 +71,7 @@ async function publicContext(query: string): Promise<string> {
   return JSON.stringify({
     generatedAt: new Date().toISOString(),
     site: publicSite,
-    exchangeRate: { usdToAoa: exchangeRate, source: safeText(settingsByKey.exchange_rate?.source, 120), updatedAt: safeText(settingsByKey.exchange_rate?.updatedAt, 40) },
+    currency: 'AOA',
     publicSettings,
     categories: categories.slice(0, 50).map((item) => ({ name: safeText(item.name, 100), slug: safeText(item.slug, 100), description: safeText(item.description, 200), activeProductCount: Number(item.product_count ?? 0) })),
     relevantActiveProducts: products,

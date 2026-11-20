@@ -1,55 +1,38 @@
 # GameAO
 
-Plataforma de comércio de videojogos para Angola, construída sobre a identidade visual do GameShop e adaptada para a marca GameAO.
+A GameAO é uma loja digital de videojogos e produtos para jogadores em Angola. O projeto combina catálogo, compras, atendimento, conteúdos e operação administrativa numa aplicação web responsiva em português de Angola.
 
-## Visão geral
+**Autoria:** Delvis de Morais — CEO & Fundador e programador.
 
-O projeto inclui uma loja responsiva em português de Angola, catálogo de videojogos, carrinho, lista de desejos, comparação de produtos, checkout, acompanhamento de encomendas, geração de faturas, autenticação própria e um painel administrativo ligado à mesma base de dados da loja.
+## Destaques
 
-A aparência preserva a linguagem do GameShop: tipografia Rubik, cabeçalho escuro, cor de destaque laranja, cartões de produto, carrosséis, banners e navegação responsiva.
+- Catálogo com categorias, pesquisa, filtros, ordenação, produtos digitais e físicos.
+- Preços nativos em kwanzas: o valor digitado no painel é o valor exibido e cobrado. Por exemplo, `1340` resulta em `1 340,00 Kz`, tanto no produto como nas variantes, carrinho, checkout e fatura.
+- Carrinho persistente, variantes, lista de desejos, comparação e checkout.
+- Criação e acompanhamento de encomendas, comprovativos de pagamento e faturas PDF.
+- Contas de clientes, histórico de compras, favoritos e programa de afiliados.
+- Painel administrativo para catálogo, categorias, stock, encomendas, conteúdo, notificações e configurações da loja.
+- SEO, dados estruturados, blog, FAQs, assistência ao cliente e endpoint de saúde.
 
-## Funcionalidades
+## Arquitetura
 
-- Catálogo com produtos, categorias, pesquisa, ordenação e filtros.
-- Preços-base em USD convertidos para AOA/Kz através de uma taxa gerida no painel administrativo.
-- Carrinho persistente, lista de desejos e comparação de produtos.
-- Registo, login, logout e gestão de perfil com autenticação própria.
-- Checkout com criação de encomendas persistentes no MySQL.
-- Números de encomenda únicos no formato `GA` + identificador, por exemplo `GA769`.
-- Acompanhamento público da encomenda mediante número e email.
-- Faturas PDF em dois modelos: clássica e moderna.
-- Alteração de estado de encomendas com histórico, auditoria e tentativas de notificação.
-- Painel administrativo com visão geral, pedidos, faturas, produtos e configuração da taxa.
-- Gestão de produtos com criação e ativação/desativação sem editar código.
-- SEO básico, manifesto público de rotas e endpoint de health check.
-
-## Stack
-
-- React 19
-- Vite 7
-- TypeScript
-- Express
-- MySQL gerido
-- `mysql2`
-- `bcryptjs`
-- `pdfkit`
-- `nodemailer`
-- Playwright para validações de fluxo
-
-## Estrutura
+O frontend usa **React 19**, **Vite 7**, **TypeScript** e React Router. A API é servida por **Express 5** e acede à base de dados PostgreSQL através de `pg`; o adaptador traduz parte do SQL legado para manter compatibilidade com o esquema existente. Os documentos PDF são gerados com `pdfkit` e as notificações podem usar SMTP e WhatsApp quando as respetivas credenciais estão configuradas.
 
 ```text
-src/                    Aplicação React, páginas, componentes e estilos
-server/                 API Express, autenticação, migrações e serviços
+src/                    Frontend React, páginas, contexto e componentes
+server/                 API Express, autenticação e serviços
 server/migrations/      Migrações SQL versionadas
-public/                 Assets públicos e manifesto de rotas
-docs/                   Notas técnicas e documentação de referência
-Dockerfile              Contrato de execução para produção
+public/assets/          Logótipo, imagens e foto do fundador
+docs/                   Documentação técnica
 ```
+
+## Preços em AOA/Kz
+
+As colunas históricas `base_price_usd`, `sale_price_usd`, `price_usd` e `original_price_usd` permanecem no esquema apenas por compatibilidade, mas o seu significado atual é **AOA/Kz**. Não existe conversão cambial no catálogo. A migração `0016_native_aoa_prices.sql` documenta esta regra. A taxa cambial histórica não altera produtos, variantes, carrinho nem pedidos novos.
 
 ## Desenvolvimento local
 
-Requisitos: Node.js 20 ou superior, pnpm e uma base de dados MySQL acessível.
+Requisitos: Node.js 20+, pnpm e uma base de dados PostgreSQL acessível.
 
 ```bash
 pnpm install
@@ -57,30 +40,20 @@ cp .env.example .env
 pnpm dev
 ```
 
-A aplicação de desenvolvimento fica disponível em `http://localhost:3000`.
+A aplicação fica disponível, por defeito, em `http://localhost:3000`. Para validar o projeto: 
 
-## Variáveis de ambiente
+```bash
+pnpm typecheck
+pnpm build
+```
 
-Nunca coloque credenciais diretamente no código ou no frontend. Consulte `.env.example` para as variáveis suportadas, incluindo a ligação MySQL, sessão, SMTP e WhatsApp.
+O servidor também pode ser iniciado com `pnpm start`. O endpoint `/_app/health` informa o estado da aplicação e da base de dados.
 
-As credenciais de produção devem ser configuradas no ambiente de execução ou no gestor de segredos. O ficheiro `.env` local não deve ser commitado.
+## Configuração
 
-## Base de dados
+Nunca coloque palavras-passe, tokens ou chaves no código. Configure no ambiente de execução as variáveis presentes em `.env.example`, incluindo `DATABASE_URL`, sessão, SMTP e integrações opcionais. O ficheiro `.env` não deve ser versionado.
 
-As migrações são aplicadas pelo bootstrap do servidor. O modelo de dados cobre utilizadores, sessões, produtos, categorias, conteúdo, banners, encomendas, itens, estados, faturas, notificações e auditoria.
-
-O catálogo público e o painel administrativo usam a mesma base de dados. Operações de teste que criem ou alterem registos devem ser executadas com cuidado, porque a base gerida é partilhada entre os ambientes definidos pelo projeto.
-
-## Administração
-
-A área administrativa está disponível em `/admin` e exige uma sessão com função administrativa. O menu inclui:
-
-- Visão geral operacional;
-- Pedidos e faturas;
-- Produtos;
-- Configuração interna da taxa de câmbio.
-
-O primeiro administrador deve ser criado pelo comando de inicialização usando variáveis de ambiente, sem guardar a palavra-passe no repositório:
+Para criar o primeiro administrador, use credenciais apenas no terminal ou no gestor de segredos:
 
 ```bash
 GAMEAO_ADMIN_EMAIL="admin@exemplo.ao" \
@@ -89,37 +62,18 @@ GAMEAO_ADMIN_NAME="Administrador" \
 pnpm admin:init
 ```
 
-## Contactos da loja
+Depois, aceda a `/admin` com uma conta administrativa.
+
+## Operação e dados
+
+As migrações são aplicadas pelo bootstrap do servidor. O catálogo público e o painel usam a mesma base de dados, por isso operações manuais devem ser feitas com cautela. Pagamentos por cartão não são ativados sem fornecedor, credenciais e validação do fluxo; o sistema atual regista encomendas e comprovativos sem guardar dados de cartão.
+
+## Contactos
 
 - Email: geral@gameao.shop
-- Telefone: 973 929 712
+- Telefone/WhatsApp: 973 929 712
 - Localização: Luanda, Angola
-
-## Build e produção
-
-```bash
-pnpm build
-pnpm start
-```
-
-O servidor respeita a variável `PORT` e usa `3000` como valor padrão. O endpoint `/_app/health` devolve o estado do serviço e da base de dados.
-
-## Publicação
-
-A produção corre num contentor Docker gerido pela Manus, com base de dados MySQL gerida na mesma plataforma:
-
-- `Dockerfile` — instala dependências, compila o frontend e o servidor, e arranca a aplicação com `pnpm start`.
-- MySQL gerido — a plataforma injeta `DATABASE_URL`; as migrações e o catálogo inicial são aplicados no arranque.
-- `/_app/health` — verificação de saúde usada pela plataforma antes de encaminhar tráfego.
-
-O repositório do projeto na Manus é a fonte usada para publicar. O repositório `delvismorais/GameAO` no GitHub mantém o mesmo histórico de código.
-
-## Notas de operação
-
-A integração de pagamentos por cartão ou por fornecedor externo não é ativada sem fornecedor escolhido, credenciais protegidas e validação do fluxo. O sistema atual regista encomendas e mantém a arquitetura preparada para uma futura integração, sem armazenar dados de cartão.
-
-As notificações por email e WhatsApp dependem das credenciais correspondentes. Quando não estiverem configuradas, a alteração do pedido fica registada com o estado `not_configured` em vez de ser apresentada como enviada.
 
 ## Licença e conteúdos
 
-Este repositório contém a implementação GameAO e os assets utilizados pelo projeto. Nomes, capas, marcas e imagens de jogos pertencem aos respetivos titulares. Verifique os direitos de utilização antes de distribuir os assets fora do ambiente autorizado.
+Este repositório contém a implementação da GameAO e os seus assets. Nomes, capas, marcas e imagens de jogos pertencem aos respetivos titulares; confirme os direitos de utilização antes de redistribuir qualquer conteúdo.

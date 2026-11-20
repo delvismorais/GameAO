@@ -256,8 +256,8 @@ export const GAMEAO_LOGO_URL = 'https://gameao.onrender.com/assets/gameao-logo.p
 
 export const FOUNDER_PROFILE = {
   name: 'Delvis de Morais',
-  role: 'CEO & Fundador',
-  image: 'https://delvisfolio-ka5a62ww.manus.space/favicon.png',
+  role: 'CEO & Fundador e programador',
+  image: '/assets/founder-delvis-de-morais.png',
   bio: 'Empreendedor digital apaixonado por inovação e transformação tecnológica. Fundador da Morário Digital, GameAO, MD Recargas e UniPrep, dedicado a criar soluções que aproximam pessoas e negócios através da tecnologia.',
 };
 

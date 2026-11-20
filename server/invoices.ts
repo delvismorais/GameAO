@@ -87,7 +87,7 @@ function localPublicImage(imageUrl: string | null | undefined, root: string): st
 }
 
 export async function createInvoicePdf(order: InvoiceOrder, items: InvoiceItem[], template: InvoiceTemplate, root: string): Promise<Buffer> {
-  const document = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `Fatura ${order.orderNumber}`, Author: 'GameAO — MORÁSIO DIGITAL', Subject: `Fatura da encomenda ${order.orderNumber}` } });
+  const document = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `Fatura ${order.orderNumber}`, Author: 'Delvis de Morais — GameAO', Subject: `Fatura da encomenda ${order.orderNumber}` } });
   const chunks: Buffer[] = [];
   document.on('data', (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve, reject) => {

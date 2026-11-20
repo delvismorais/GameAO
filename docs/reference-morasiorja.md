@@ -61,7 +61,7 @@ Componentes potencialmente úteis como referência conceptual: Header, Footer, H
 - A stack é diferente: o GameAO é React/Vite estático com estado local; a referência é Express/tRPC/Drizzle/MySQL.
 - **Manter a estrutura e a aparência GameShop do GameAO.** Adaptar apenas o que for explicitamente pedido.
 - Não copiar backend, autenticação, pagamentos, e-mails, afiliados ou painel administrativo sem pedido explícito.
-- Não reutilizar dados pessoais, IBANs, credenciais, dumps de clientes ou configurações SMTP encontrados no repositório. Existem ficheiros sensíveis como `.env.example`, guias de e-mail e dumps em `.manus/db`; não os copiar para o GameAO.
+- Não reutilizar dados pessoais, IBANs, credenciais, dumps de clientes ou configurações SMTP encontrados no repositório. Existem ficheiros sensíveis como `.env.example`, guias de e-mail e dumps em `.ambiente de execução/db`; não os copiar para o GameAO.
 - Confirmar licença e permissão antes de reutilizar textos, imagens ou código de terceiros.
 - O GameAO continua sem pagamentos reais, integrações com fornecedores ou funcionalidades comerciais adicionais até o utilizador pedir.
 

@@ -1,7 +1,7 @@
 # GameAO — Progresso da implementação (instruções complementares)
 
 ## Fonte das instruções
-`docs/INSTRUCOES_COMPLEMENTARES.md` (copiado de https://github.com/delvismorais/GameAO/blob/main/intru%C3%A7%C3%B5es%20Manus)
+`docs/INSTRUCOES_COMPLEMENTARES.md` (copiado de https://github.com/delvismorais/GameAO/blob/main/intru%C3%A7%C3%B5es%20ambiente de execução)
 
 ## Objetivo
 Adaptar a organização administrativa, checkout, pagamentos, notificações, uploads e infraestrutura da MD Recargas para o GameAO, preservando integralmente a aparência pública.

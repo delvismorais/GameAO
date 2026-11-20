@@ -1149,7 +1149,7 @@ Liga o subdomínio ao bucket público através da funcionalidade oficial de Cust
 
 Configura HTTPS, caching e distribuição dos recursos.
 
-Não modifiques os registos DNS principais do website nem interrompas a ligação atual ao Manus.
+Não modifiques os registos DNS principais do website nem interrompas a ligação atual ao ambiente de execução.
 
 Qualquer alteração que possa afetar o domínio principal ou a hospedagem atual deve ser apresentada antes de executada.
 

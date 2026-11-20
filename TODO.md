@@ -60,7 +60,7 @@
 
 - [x] Desktop 1920×1080, 1440×900, 1366×768; tablet 768×1024; mobile 390×844 e 375×812 sem scroll horizontal, textos cortados ou imagens distorcidas.
 - [x] Em mobile o cabeçalho, menu, pesquisa, barra inferior, cartões (2 colunas), banners, carrosséis com toque, botões e filtros funcionam; a versão mobile não é uma simplificação excessiva.
-- [x] Não há erros críticos na consola, imagens em falta ou links quebrados; todas as rotas abrem e o manifesto `/manus-routes.json` corresponde ao código.
+- [x] Não há erros críticos na consola, imagens em falta ou links quebrados; todas as rotas abrem e o manifesto `/ambiente de execução-routes.json` corresponde ao código.
 - [x] Validação final por agente independente contra este TODO e o plano, com correção dos problemas confirmados (imagem principal do Dirt 5, texto "FAQs" e sincronização dos dados de perfil após novo login).
 
 
@@ -69,7 +69,7 @@
 - [x] `test_flow.py`: 46/46 verificações passaram (taxa configurável, preços Kz, filtros, pesquisa, carrinho, checkout, encomenda, conta, rotas, ausência de `$` e erros JS).
 - [x] `test_extra.py`: 20/20 verificações passaram (registo/login/logout/recuperação, contacto, FAQ, comentários, pesquisa por categoria, adicionar do cartão, validação do checkout, atualização do carrinho com nova taxa, menu/pesquisa/carrinho mobile).
 - [x] Auditoria de recursos: 23 rotas sem falhas HTTP, 69 links internos sem quebras, 0 imagens em falta, 0 overflow horizontal entre 375 e 1920 px.
-- [x] Build de produção (`pnpm build`) concluído; fallback de rotas profundas e `manus-routes.json` verificados no `vite preview`.
+- [x] Build de produção (`pnpm build`) concluído; fallback de rotas profundas e `ambiente de execução-routes.json` verificados no `vite preview`.
 - [x] Validação independente executada com testes próprios do validador: 0 preços inválidos, 0 símbolos `$`, 0 Lorem Ipsum, 0 textos ingleses visíveis, 0 links quebrados e 0 imagens quebradas após correção. Defeitos encontrados: imagem em falta do Dirt 5, "FAQs" em inglês e perfil vazio após novo login — todos corrigidos.
 
 ## 11. Fundação do backend e da base de dados
@@ -121,7 +121,7 @@
 ## 16. SEO, segurança e infraestrutura
 
 - [ ] Criar `/sitemap.xml` dinâmico para produtos, categorias, artigos e páginas públicas, excluindo administração, login, registo, carrinho, checkout e áreas privadas; criar `/robots.txt` coerente.
-- [ ] Implementar títulos, descrições, URLs amigáveis, canónicas, Open Graph, imagens de partilha, dados estruturados e SEO editável para produtos, categorias e artigos; usar a origem pública `https://gameao-qjqpj4sf.manus.space/` até existir domínio definitivo.
+- [ ] Implementar títulos, descrições, URLs amigáveis, canónicas, Open Graph, imagens de partilha, dados estruturados e SEO editável para produtos, categorias e artigos; usar a origem pública `https://gameao.shop/` até existir domínio definitivo.
 - [ ] Aplicar validação no servidor, proteção de rotas e permissões, proteção contra SQL injection/XSS/CSRF quando aplicável, rate limiting, validação de uploads, cookies/sessões seguras, gestão de segredos, logs sem dados sensíveis e tratamento seguro de erros.
 - [ ] Implementar backup/exportação e recuperação operacional sem apagar dados existentes; otimizar imagens, lazy loading, fontes, cache, índices, consultas, assets, disponibilidade e logs técnicos.
 - [ ] Preservar a aparência, cores, tipografia, logótipo, estrutura, imagens, cabeçalho, rodapé, animações, efeitos e responsividade do GameAO; nenhuma nova funcionalidade deve introduzir um redesenho.
