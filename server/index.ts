@@ -27,6 +27,7 @@ import { registerCommunicationRoutes } from './routes/communication';
 import { registerAdminModuleRoutes } from './routes/admin-modules';
 import { registerReviewRoutes } from './routes/reviews';
 import { registerAssistantRoutes } from './routes/assistant';
+import { registerResendWebhookRoutes } from './routes/resend-webhooks';
 import { attributeAffiliate, findAffiliateByCode, settleAffiliateCommission } from './affiliates';
 import { hasCapability, rateLimit, sameOriginGuard, securityHeaders, type Capability } from './security';
 import { registerMediaRoutes } from './media';
@@ -41,6 +42,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(securityHeaders);
 registerSeoRoutes(app);
+registerResendWebhookRoutes(app);
 app.use('/api', express.json({ limit: '1mb' }));
 app.use('/api', sameOriginGuard);
 const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024, files: 1 } });
@@ -1080,7 +1082,9 @@ app.post('/api/admin/email/campaigns/:id/send', asyncRoute(async (request, respo
   const [[campaign]] = await getPool().query<any[]>(`SELECT * FROM email_campaigns WHERE id = ? LIMIT 1`, [campaignId]);
   if (!campaign) { response.status(404).json({ error: 'campaign_not_found', message: 'Campanha não encontrada.' }); return; }
   if (String(campaign.audience_status) !== 'subscribed') { response.status(409).json({ error: 'invalid_audience', message: 'Esta campanha não está limitada a leads subscritos.' }); return; }
-  const [lock] = await getPool().execute<any>(`UPDATE email_campaigns SET status = 'sending', updated_at = NOW() WHERE id = ? AND audience_status = 'subscribed' AND (status IN ('draft', 'failed') OR (status = 'sending' AND updated_at < NOW() - INTERVAL '15 minutes'))`, [campaignId]);
+  // A job interrupted after a provider accepted some recipients cannot be safely retried.
+  // Only drafts may start; failed/stale campaigns require review instead of a blind resend.
+  const [lock] = await getPool().execute<any>(`UPDATE email_campaigns SET status = 'sending', updated_at = NOW() WHERE id = ? AND audience_status = 'subscribed' AND status = 'draft'`, [campaignId]);
   if (Number(lock.affectedRows ?? 0) !== 1) { response.status(409).json({ error: 'campaign_in_progress', message: 'Esta campanha já foi enviada ou está a ser processada por outro administrador.' }); return; }
   let jobId: string;
   try {

@@ -51,7 +51,7 @@ export function AssistantWidget() {
         <section className="gameao-assistant__panel" aria-label="Assistente virtual GameAO">
           <header className="gameao-assistant__header">
             <div className="gameao-assistant__identity">
-              <span className="gameao-assistant__mark" aria-hidden="true">AO</span>
+              <img className="gameao-assistant__avatar" src="/assets/gameao-assistant-avatar.png" alt="Avatar do assistente GameAO" />
               <span><strong>Assistente GameAO</strong><small>Suporte sobre informação pública</small></span>
             </div>
             <button className="gameao-assistant__minimize" type="button" onClick={() => setOpen(false)} aria-label="Minimizar assistente">−</button>
@@ -88,7 +88,7 @@ export function AssistantWidget() {
         aria-label={open ? 'Fechar assistente GameAO' : 'Abrir assistente GameAO'}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="gameao-assistant__launcher-mark" aria-hidden="true">{open ? '×' : 'AO'}</span>
+        <span className="gameao-assistant__launcher-mark" aria-hidden="true">{open ? '×' : <img src="/assets/gameao-assistant-avatar.png" alt="" />}</span>
         <span className="gameao-assistant__launcher-label">{open ? 'Fechar' : 'Ajuda'}</span>
       </button>
     </div>

@@ -1,9 +1,11 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { getPool, type DbConnection } from './db';
+import { getKnownResendEmailStatus } from './resend-events';
 
 export type OrderStatus = 'awaiting_payment' | 'payment_verification' | 'payment_confirmed' | 'processing' | 'ready_for_delivery' | 'completed' | 'cancelled' | 'refunded';
 export type NotificationChannel = 'email' | 'whatsapp' | 'sms' | 'in_app';
-export type DeliveryStatus = 'sent' | 'failed' | 'not_configured' | 'skipped';
+export type DeliveryStatus = 'sent' | 'accepted' | 'delivered' | 'delayed' | 'bounced' | 'complained' | 'suppressed' | 'failed' | 'not_configured' | 'skipped';
+type EmailSendResult = { status: DeliveryStatus; providerMessageId?: string };
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {
   awaiting_payment: 'A aguardar pagamento',
@@ -257,27 +259,37 @@ async function getTemplate(eventKey: string, channel: NotificationChannel): Prom
   return row ? { subject: String(row.subject ?? ''), body: String(row.body ?? '') } : null;
 }
 
-async function logDelivery(input: { eventKey: string; channel: NotificationChannel; recipient: string; status: DeliveryStatus; subject?: string; providerMessageId?: string; error?: string; userId?: number | null; orderId?: number | null; payload?: unknown }): Promise<void> {
+async function logDelivery(input: { eventKey: string; channel: NotificationChannel; recipient: string; status: DeliveryStatus; subject?: string; providerMessageId?: string; error?: string; userId?: number | null; orderId?: number | null; payload?: unknown }): Promise<DeliveryStatus> {
   try {
+    let status = input.status;
+    let error = input.error;
+    if (input.channel === 'email' && status === 'accepted' && input.providerMessageId && process.env.RESEND_WEBHOOK_SECRET?.trim()) {
+      try {
+        const known = await getKnownResendEmailStatus(input.providerMessageId);
+        if (known) { status = known.status; error = known.errorMessage ?? undefined; }
+      } catch { /* não atrasar nem perder o registo se a reconciliação ainda não estiver disponível */ }
+    }
     await getPool().execute(
       `INSERT INTO notification_deliveries (event_key, channel, recipient, user_id, order_id, status, subject, provider_message_id, error_message, payload_json, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [input.eventKey, input.channel, input.recipient.slice(0, 255), input.userId ?? null, input.orderId ?? null, input.status, input.subject?.slice(0, 255) ?? null, input.providerMessageId ?? null, input.error ?? null, JSON.stringify(input.payload ?? {}), input.status === 'sent' ? new Date() : null],
+      [input.eventKey, input.channel, input.recipient.slice(0, 255), input.userId ?? null, input.orderId ?? null, status, input.subject?.slice(0, 255) ?? null, input.providerMessageId ?? null, error ?? null, JSON.stringify(input.payload ?? {}), ['sent', 'accepted', 'delivered'].includes(status) ? new Date() : null],
     );
     if (input.orderId && input.channel !== 'in_app') {
       await getPool().execute(
         `INSERT INTO order_notifications (order_id, channel, recipient, event_type, status, provider_message_id, error_message, payload_json, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [input.orderId, input.channel, input.recipient, input.eventKey, input.status, input.providerMessageId ?? null, input.error ?? null, JSON.stringify(input.payload ?? {}), input.status === 'sent' ? new Date() : null],
+        [input.orderId, input.channel, input.recipient, input.eventKey, status, input.providerMessageId ?? null, error ?? null, JSON.stringify(input.payload ?? {}), ['sent', 'accepted', 'delivered'].includes(status) ? new Date() : null],
       );
     }
+    return status;
   } catch (error) {
     console.error('[notifications] falha ao registar entrega', error instanceof Error ? error.message : error);
+    return input.status;
   }
 }
 
-async function sendEmail(input: { eventKey: string; to: string; subject: string; body: string; userId?: number | null; orderId?: number | null; site: SiteConfig }): Promise<DeliveryStatus> {
+async function sendEmail(input: { eventKey: string; to: string; subject: string; body: string; userId?: number | null; orderId?: number | null; site: SiteConfig }): Promise<EmailSendResult> {
   if (!emailConfigured()) {
     await logDelivery({ eventKey: input.eventKey, channel: 'email', recipient: input.to, status: 'not_configured', subject: input.subject, error: 'SMTP não configurado.', userId: input.userId, orderId: input.orderId });
-    return 'not_configured';
+    return { status: 'not_configured' };
   }
   try {
     const from = process.env.SMTP_FROM || process.env.EMAIL_FROM || input.site.email;
@@ -314,12 +326,12 @@ async function sendEmail(input: { eventKey: string; to: string; subject: string;
       providerMessageId = info.messageId;
     }
 
-    await logDelivery({ eventKey: input.eventKey, channel: 'email', recipient: input.to, status: 'sent', subject: input.subject, providerMessageId, userId: input.userId, orderId: input.orderId });
-    return 'sent';
+    const status = await logDelivery({ eventKey: input.eventKey, channel: 'email', recipient: input.to, status: 'accepted', subject: input.subject, providerMessageId, userId: input.userId, orderId: input.orderId });
+    return { status, providerMessageId };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Falha no envio SMTP.';
     await logDelivery({ eventKey: input.eventKey, channel: 'email', recipient: input.to, status: 'failed', subject: input.subject, error: reason, userId: input.userId, orderId: input.orderId });
-    return 'failed';
+    return { status: 'failed' };
   }
 }
 
@@ -476,13 +488,13 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
       if (isAdminEvent) {
         const recipients = await adminRecipients();
         if (!recipients.length) return ['email', 'skipped'];
-        const statuses = await Promise.all(recipients.map((to) => sendEmail({ eventKey: input.eventKey, to, subject, body, orderId, site })));
-        const status: DeliveryStatus = statuses.includes('failed') ? 'failed' : statuses.includes('not_configured') ? 'not_configured' : 'sent';
+        const statuses = (await Promise.all(recipients.map((to) => sendEmail({ eventKey: input.eventKey, to, subject, body, orderId, site })))).map((result) => result.status);
+        const status: DeliveryStatus = statuses.includes('failed') || statuses.includes('bounced') || statuses.includes('suppressed') ? 'failed' : statuses.includes('complained') ? 'complained' : statuses.includes('delayed') ? 'delayed' : statuses.includes('delivered') ? 'delivered' : statuses.includes('accepted') ? 'accepted' : statuses.includes('not_configured') ? 'not_configured' : 'skipped';
         return ['email', status];
       }
       const recipient = user?.email ?? '';
       if (!recipient || !prefs.email) return ['email', 'skipped'];
-      return ['email', await sendEmail({ eventKey: input.eventKey, to: recipient, subject, body, userId: user?.id, orderId, site })];
+      return ['email', (await sendEmail({ eventKey: input.eventKey, to: recipient, subject, body, userId: user?.id, orderId, site })).status];
     }
     if (channel === 'whatsapp') {
       const recipient = user?.phone ?? '';
@@ -512,6 +524,10 @@ function statusError(status: DeliveryStatus, channel: NotificationChannel): stri
   }
   if (status === 'skipped') return 'Destinatário ou modelo não disponível para este canal.';
   if (status === 'failed') return `Falha no envio pelo canal ${channel}; consulte o histórico de entregas.`;
+  if (status === 'bounced') return 'O servidor destinatário rejeitou permanentemente o email.';
+  if (status === 'suppressed') return 'O provedor suprimiu o email; a mensagem não foi entregue.';
+  if (status === 'delayed') return 'O provedor informou atraso temporário; a entrega ainda não foi confirmada.';
+  if (status === 'complained') return 'O email foi marcado como spam pelo destinatário.';
   return undefined;
 }
 
@@ -522,7 +538,7 @@ export async function sendManualNotification(input: {
   recipient?: string | null;
   subject?: string | null;
   body: string;
-}): Promise<{ status: DeliveryStatus; error?: string }> {
+}): Promise<{ status: DeliveryStatus; error?: string; providerMessageId?: string }> {
   const eventKey = input.eventKey ?? 'admin.manual_order';
   const site = await getSiteConfig();
   const order = input.order;
@@ -547,10 +563,15 @@ export async function sendManualNotification(input: {
   const plainBody = renderedBody.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   const recipient = String(input.recipient ?? '').trim() || (input.channel === 'email' ? order.customer_email : order.customer_phone ?? '');
   let status: DeliveryStatus;
+  let providerMessageId: string | undefined;
 
   if (input.channel === 'email') {
     if (!recipient) status = 'skipped';
-    else status = await sendEmail({ eventKey, to: recipient, subject: renderedSubject || `Atualização da encomenda ${order.order_number}`, body: renderedBody, userId: order.user_id, orderId: order.id, site });
+    else {
+      const result = await sendEmail({ eventKey, to: recipient, subject: renderedSubject || `Atualização da encomenda ${order.order_number}`, body: renderedBody, userId: order.user_id, orderId: order.id, site });
+      status = result.status;
+      providerMessageId = result.providerMessageId;
+    }
   } else if (input.channel === 'whatsapp') {
     if (!recipient) status = 'skipped';
     else status = await sendWhatsApp({ eventKey, to: recipient, body: plainBody, userId: order.user_id, orderId: order.id });
@@ -568,7 +589,7 @@ export async function sendManualNotification(input: {
   } else {
     status = 'skipped';
   }
-  return { status, error: statusError(status, input.channel) };
+  return { status, error: statusError(status, input.channel), ...(providerMessageId ? { providerMessageId } : {}) };
 }
 
 export async function sendManualEmail(input: {
@@ -577,7 +598,7 @@ export async function sendManualEmail(input: {
   customerName?: string | null;
   subject: string;
   body: string;
-}): Promise<{ status: DeliveryStatus; error?: string }> {
+}): Promise<{ status: DeliveryStatus; error?: string; providerMessageId?: string }> {
   const site = await getSiteConfig();
   const to = input.to.trim().toLowerCase();
   const variables: Record<string, string | number | null | undefined> = {
@@ -597,8 +618,8 @@ export async function sendManualEmail(input: {
   };
   const subject = renderTemplate(input.subject, variables) || `Mensagem da ${site.name}`;
   const body = renderTemplate(input.body, variables);
-  const status = await sendEmail({ eventKey: input.eventKey ?? 'admin.manual_email', to, subject, body, site });
-  return { status, error: statusError(status, 'email') };
+  const result = await sendEmail({ eventKey: input.eventKey ?? 'admin.manual_email', to, subject, body, site });
+  return { ...result, error: statusError(result.status, 'email') };
 }
 
 export async function sendManualSms(input: { to: string; body: string; eventKey?: string; customerName?: string | null; customerEmail?: string | null; orderNumber?: string | null; orderTotal?: number | string | null; orderStatus?: string | null }): Promise<{ status: DeliveryStatus; error?: string }> {
@@ -630,9 +651,9 @@ export async function sendEmailCampaign(input: {
   subject: string;
   bodyHtml: string;
   leads: Array<{ email: string; name?: string | null }>;
-}): Promise<{ recipientCount: number; sentCount: number; failedCount: number }> {
+}): Promise<{ recipientCount: number; acceptedCount: number; failedCount: number }> {
   const site = await getSiteConfig();
-  let sentCount = 0;
+  let acceptedCount = 0;
   let failedCount = 0;
   let nextIndex = 0;
   const sendNext = async () => {
@@ -655,12 +676,12 @@ export async function sendEmailCampaign(input: {
         body: renderTemplate(input.bodyHtml, variables),
         site,
       });
-      if (result === 'sent') sentCount += 1;
+      if (result.status === 'accepted' || result.status === 'delivered') acceptedCount += 1;
       else failedCount += 1;
     }
   };
   await Promise.all(Array.from({ length: Math.min(5, input.leads.length) }, () => sendNext()));
-  return { recipientCount: input.leads.length, sentCount, failedCount };
+  return { recipientCount: input.leads.length, acceptedCount, failedCount };
 }
 
 export async function notifyOrderStatusChanged(order: NotificationOrder, status: string, extras?: Record<string, string | number | null | undefined>): Promise<{ queued: true; jobId: string }> {
@@ -729,7 +750,7 @@ export async function notifyLowStock(product: { id: string; name: string; stock_
   await enqueueNotificationJob({ kind: 'dispatch', input: { eventKey: 'admin.low_stock', variables: { product_name: product.name, stock_quantity: product.stock_quantity }, channels: ['in_app', 'email'], entityType: 'product', entityId: product.id, level: 'warning' } });
 }
 
-export async function sendTestNotification(eventKey: string, channel: NotificationChannel, to: string): Promise<{ status: DeliveryStatus; error?: string }> {
+export async function sendTestNotification(eventKey: string, channel: NotificationChannel, to: string): Promise<{ status: DeliveryStatus; error?: string; providerMessageId?: string }> {
   const site = await getSiteConfig();
   const template = await getTemplate(eventKey, channel);
   if (!template) return { status: 'skipped', error: 'Modelo não encontrado para este evento e canal.' };
@@ -742,7 +763,7 @@ export async function sendTestNotification(eventKey: string, channel: Notificati
   };
   const subject = renderTemplate(template.subject || 'Notificação de teste GameAO', variables);
   const body = renderTemplate(template.body, variables);
-  if (channel === 'email') return { status: await sendEmail({ eventKey, to, subject, body, site }) };
+  if (channel === 'email') return sendEmail({ eventKey, to, subject, body, site });
   if (channel === 'whatsapp') return { status: await sendWhatsApp({ eventKey, to, body }) };
   if (channel === 'sms') return { status: await sendSms({ eventKey, to, body }) };
   await createAdminNotification({ title: `Teste de notificação: ${subject}`, message: body, level: 'info', eventKey });
@@ -792,8 +813,8 @@ async function performNotificationJob(payload: NotificationJobPayload): Promise<
     try {
       const [leads] = await getPool().query<any[]>(`SELECT email, name FROM marketing_leads WHERE status = 'subscribed' ORDER BY id ASC LIMIT 5000`);
       const result = await sendEmailCampaign({ campaignId: payload.campaignId, subject: String(campaign.subject), bodyHtml: String(campaign.body_html), leads });
-      const status = result.failedCount > 0 && result.sentCount === 0 ? 'failed' : 'sent';
-      await getPool().execute(`UPDATE email_campaigns SET status = ?, recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [status, result.recipientCount, result.sentCount, payload.campaignId]);
+      const status = result.failedCount > 0 && result.acceptedCount === 0 ? 'failed' : result.failedCount > 0 ? 'partially_failed' : 'accepted';
+      await getPool().execute(`UPDATE email_campaigns SET status = ?, recipient_count = ?, sent_count = ?, sent_at = NOW(), updated_at = NOW() WHERE id = ?`, [status, result.recipientCount, result.acceptedCount, payload.campaignId]);
       return { ...result, status };
     } catch (error) {
       await getPool().execute(`UPDATE email_campaigns SET status = 'failed', updated_at = NOW() WHERE id = ?`, [payload.campaignId]).catch(() => undefined);
@@ -818,10 +839,10 @@ async function performNotificationJob(payload: NotificationJobPayload): Promise<
 
 function containsFailedDelivery(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsFailedDelivery);
-  if (typeof value === 'string') return ['failed', 'not_configured'].includes(value);
+  if (typeof value === 'string') return ['failed', 'not_configured', 'bounced', 'suppressed'].includes(value);
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
-  if (typeof record.status === 'string' && ['failed', 'not_configured'].includes(record.status)) return true;
+  if (typeof record.status === 'string' && ['failed', 'not_configured', 'bounced', 'suppressed'].includes(record.status)) return true;
   return Object.values(record).some(containsFailedDelivery);
 }
 

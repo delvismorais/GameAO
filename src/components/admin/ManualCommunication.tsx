@@ -3,16 +3,23 @@ import { Badge, Empty, Field, Notice, api, useJson } from './ui';
 
 type EmailTemplate = { id: number; event_key: string; channel: string; name: string; subject: string; body: string; is_active: number };
 type NoticeState = { tone: 'success' | 'error' | 'warning' | 'info'; text: string } | null;
-type NotificationJob = { id: string; status: string; result?: { status?: string; error?: string; sentCount?: number; failedCount?: number; recipientCount?: number } | null; error?: string | null; campaign?: boolean };
+type NotificationJob = { id: string; status: string; result?: { status?: string; error?: string; providerMessageId?: string; acceptedCount?: number; failedCount?: number; recipientCount?: number } | null; error?: string | null; campaign?: boolean };
 
 function finalJobNotice(job: NotificationJob): NoticeState {
   if (job.status === 'failed') return { tone: 'error', text: job.error || 'O envio falhou. Consulte o histórico de entregas.' };
   if (job.campaign) {
-    const sent = job.result?.sentCount ?? 0;
+    const accepted = job.result?.acceptedCount ?? 0;
     const failed = job.result?.failedCount ?? 0;
-    return { tone: failed ? 'warning' : 'success', text: `Campanha processada: ${sent} emails enviados${failed ? ` e ${failed} falhas` : ''}.` };
+    return { tone: failed ? 'warning' : 'success', text: `Campanha processada: ${accepted} emails aceites pelo provedor${failed ? ` e ${failed} falhas` : ''}. Aceite não confirma entrega à caixa de entrada.` };
   }
-  if (job.result?.status === 'sent') return { tone: 'success', text: 'Envio concluído e registado no histórico de entregas.' };
+  const reference = job.result?.providerMessageId ? ` Referência do provedor: ${job.result.providerMessageId}.` : '';
+  if (job.result?.status === 'accepted') return { tone: 'info', text: `O provedor aceitou o email; a entrega ao servidor do destinatário ainda não foi confirmada.${reference}` };
+  if (job.result?.status === 'delivered') return { tone: 'success', text: `O servidor de email do destinatário confirmou a entrega. Isto não confirma a caixa de entrada nem a leitura.${reference}` };
+  if (job.result?.status === 'delayed') return { tone: 'warning', text: `O provedor informou atraso; a entrega ainda não foi confirmada.${reference}` };
+  if (job.result?.status === 'bounced') return { tone: 'error', text: `O servidor destinatário rejeitou o email.${reference}` };
+  if (job.result?.status === 'suppressed') return { tone: 'error', text: `O provedor suprimiu o email; não foi entregue.${reference}` };
+  if (job.result?.status === 'complained') return { tone: 'warning', text: `O destinatário marcou o email como spam.${reference}` };
+  if (job.result?.status === 'sent') return { tone: 'success', text: 'Envio do canal concluído e registado no histórico.' };
   if (job.result?.status === 'not_configured') return { tone: 'warning', text: job.result.error || 'O serviço do canal ainda não está configurado.' };
   if (job.result?.status === 'skipped') return { tone: 'warning', text: job.result.error || 'O envio foi ignorado: verifique destinatário e modelo.' };
   return { tone: 'error', text: job.result?.error || 'O envio não foi concluído; consulte o histórico de entregas.' };
@@ -78,7 +85,7 @@ export function ManualEmail() {
           if (next.campaign && next.status === 'completed') setCampaignId(null);
           return;
         }
-        setNotice({ tone: 'info', text: next.status === 'processing' ? 'O envio está a ser processado em segundo plano…' : 'Envio aceite e aguardando processamento.' });
+        setNotice({ tone: 'info', text: next.status === 'processing' ? 'O envio está a ser processado em segundo plano…' : 'Pedido colocado na fila; o provedor ainda não confirmou o envio.' });
       }
       if (active) timer = window.setTimeout(poll, 1600);
     };
@@ -122,7 +129,7 @@ export function ManualEmail() {
     setBusy(false);
     if (result.ok && result.data.jobId) {
       setJob({ id: result.data.jobId, status: 'queued' });
-      setNotice({ tone: 'info', text: 'Email aceite e colocado na fila de envio.' });
+      setNotice({ tone: 'info', text: 'Email colocado na fila. O estado do provedor será mostrado quando o processamento terminar.' });
     } else setNotice({ tone: 'error', text: result.error ?? 'Não foi possível colocar o email na fila.' });
   };
 
@@ -162,7 +169,7 @@ export function ManualEmail() {
     setBusy(true);
     setNotice(null);
     setJob(null);
-    const result = await api<{ sentCount?: number; failedCount?: number }>(`/api/admin/email/campaigns/${campaignId}/send`, { method: 'POST' });
+    const result = await api<{ acceptedCount?: number; failedCount?: number }>(`/api/admin/email/campaigns/${campaignId}/send`, { method: 'POST' });
     setBusy(false);
     if (!result.ok) {
       setNotice({ tone: 'error', text: result.error ?? 'Não foi possível colocar a campanha na fila.' });
@@ -170,7 +177,7 @@ export function ManualEmail() {
     }
     if ('jobId' in result.data && result.data.jobId) {
       setJob({ id: String(result.data.jobId), status: 'queued', campaign: true });
-      setNotice({ tone: 'info', text: 'Campanha aceite e colocada na fila de envio.' });
+      setNotice({ tone: 'info', text: 'Campanha colocada na fila; o provedor ainda não confirmou o envio.' });
     } else setNotice({ tone: 'error', text: 'O servidor não devolveu o identificador do envio.' });
   };
 
@@ -285,7 +292,7 @@ export function ManualSms() {
     setBusy(false);
     if (result.ok && result.data.jobId) {
       setJob({ id: result.data.jobId, status: 'queued' });
-      setNotice({ tone: 'info', text: 'SMS aceite e colocado na fila de envio.' });
+      setNotice({ tone: 'info', text: 'SMS colocado na fila. O resultado será mostrado quando o processamento terminar.' });
     } else setNotice({ tone: 'error', text: result.error ?? 'Não foi possível colocar o SMS na fila.' });
   };
 

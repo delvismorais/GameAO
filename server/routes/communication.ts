@@ -344,7 +344,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (matches.length > 1 && String(matches[0].order_number).toLowerCase() !== orderNumber.toLowerCase()) { response.status(409).json({ error: 'ambiguous_order_number', message: 'Existem várias encomendas com essa pesquisa. Indique o número completo.', matches: matches.map((item) => item.order_number) }); return; }
     const order = matches[0];
     const [items] = await getPool().query<any[]>(`SELECT product_name, quantity, subtotal_aoa, player_id, player_nickname FROM shop_order_items WHERE order_id = ? ORDER BY id ASC LIMIT 100`, [order.id]);
-    const [notifications] = await getPool().query<any[]>(`SELECT id, event_key, channel, recipient, status, subject, error_message, created_at FROM notification_deliveries WHERE order_id = ? ORDER BY created_at DESC LIMIT 8`, [order.id]);
+    const [notifications] = await getPool().query<any[]>(`SELECT id, event_key, channel, recipient, status, subject, provider_message_id, error_message, created_at FROM notification_deliveries WHERE order_id = ? ORDER BY created_at DESC LIMIT 8`, [order.id]);
     response.json({ order, items, notifications });
   }));
 
@@ -426,7 +426,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     const orderNumber = text(request.query.orderNumber, 80);
     if (orderNumber) { filters.push(`d.order_id = (SELECT id FROM shop_orders WHERE order_number = ? LIMIT 1)`); params.push(orderNumber); }
     const limit = Math.min(300, Math.max(1, Number(request.query.limit ?? 100)));
-    const [rows] = await getPool().query<any[]>(`SELECT d.id, d.event_key, d.channel, d.recipient, d.status, d.subject, d.error_message, d.sent_at, d.created_at, o.order_number FROM notification_deliveries d LEFT JOIN shop_orders o ON o.id = d.order_id ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''} ORDER BY d.created_at DESC LIMIT ${limit}`, params);
+    const [rows] = await getPool().query<any[]>(`SELECT d.id, d.event_key, d.channel, d.recipient, d.status, d.subject, d.provider_message_id, d.error_message, d.sent_at, d.created_at, o.order_number FROM notification_deliveries d LEFT JOIN shop_orders o ON o.id = d.order_id ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''} ORDER BY d.created_at DESC LIMIT ${limit}`, params);
     const [summary] = await getPool().query<any[]>(`SELECT channel, status, COUNT(*) AS total FROM notification_deliveries WHERE created_at > NOW() - INTERVAL '30 days' GROUP BY channel, status`);
     response.json({ deliveries: rows, summary });
   }));
@@ -440,7 +440,7 @@ export function registerCommunicationRoutes(app: Express, deps: RouteDeps): void
     if (!eventKey) { response.status(400).json({ error: 'invalid_event', message: 'Escolha um evento.' }); return; }
     const result = await sendTestNotification(eventKey, channel, to);
     await deps.recordAudit(admin.id, 'notification.test', 'notification', `${eventKey}:${channel}`, result);
-    response.json({ ok: result.status === 'sent', ...result });
+    response.json({ ok: ['sent', 'accepted', 'delivered'].includes(result.status), ...result });
   }));
 
   app.get('/api/admin/popups', wrap(async (request, response) => {

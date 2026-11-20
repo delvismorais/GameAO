@@ -65,7 +65,7 @@ export function registerAdminModuleRoutes(app: Express, deps: RouteDeps): void {
     const [items] = await getPool().query<any[]>(`SELECT * FROM shop_order_items WHERE order_id = ? ORDER BY id ASC`, [order.id]);
     const [history] = await getPool().query<any[]>(`SELECT h.*, u.name AS changed_by FROM shop_order_status_history h LEFT JOIN app_users u ON u.id = h.changed_by_user_id WHERE h.order_id = ? ORDER BY h.created_at ASC`, [order.id]);
     const [proofs] = await getPool().query<any[]>(`SELECT id, original_name, mime_type, size_bytes, status, admin_note, submitted_at, reviewed_at FROM payment_proofs WHERE order_id = ? ORDER BY submitted_at DESC`, [order.id]);
-    const [notifications] = await getPool().query<any[]>(`SELECT id, event_key, channel, recipient, status, subject, error_message, sent_at, created_at FROM notification_deliveries WHERE order_id = ? ORDER BY created_at DESC LIMIT 100`, [order.id]);
+    const [notifications] = await getPool().query<any[]>(`SELECT id, event_key, channel, recipient, status, subject, provider_message_id, error_message, sent_at, created_at FROM notification_deliveries WHERE order_id = ? ORDER BY created_at DESC LIMIT 100`, [order.id]);
     response.json({ order, items, history, proofs, notifications });
   }));
 
