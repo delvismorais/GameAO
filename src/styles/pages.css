@@ -1493,13 +1493,13 @@
 }
 
 .auth-hero__image {
-  background: url('/assets/home2/slide-1.jpg') center / cover no-repeat;
-  opacity: .82;
+  background: url('/assets/auth-switch.jpg') center / cover no-repeat;
+  opacity: .88;
   transform: scale(1.02);
 }
 
 .auth-hero__overlay {
-  background: linear-gradient(135deg, rgba(7, 16, 24, .96) 0%, rgba(7, 16, 24, .62) 47%, rgba(205, 61, 15, .5) 100%);
+  background: linear-gradient(135deg, rgba(7, 16, 24, .93) 0%, rgba(7, 16, 24, .58) 55%, rgba(205, 61, 15, .38) 100%);
 }
 
 .auth-hero__content {
