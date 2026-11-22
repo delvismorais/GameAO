@@ -1,3 +1,3 @@
 export default {
-  logoUrl: 'https://i.postimg.cc/pTp23LXt/gameao-logo.png',
+  logoUrl: 'https://gameao.onrender.com/assets/gameao-logo.png',
 };
