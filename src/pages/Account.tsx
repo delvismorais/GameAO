@@ -19,6 +19,10 @@ export function Account() {
   const [lostEmail, setLostEmail] = useState('');
   const [profile, setProfile] = useState({ name: user?.name ?? '', email: user?.email ?? '', phone: user?.phone ?? '' });
   const [lostSent, setLostSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterConfirm, setShowRegisterConfirm] = useState(false);
 
   useEffect(() => {
     if (!user) setMode('login');
@@ -34,11 +38,15 @@ export function Account() {
 
   const submitLogin = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     if (!emailValid(loginForm.email) || loginForm.password.trim().length < 6) {
       showToast('Indique um email válido e uma palavra-passe com pelo menos 6 caracteres.', 'error');
       return;
     }
-    if (await login(loginForm.email, loginForm.password)) {
+    setBusy(true);
+    const success = await login(loginForm.email, loginForm.password);
+    setBusy(false);
+    if (success) {
       showToast('Sessão iniciada.');
     } else {
       showToast('Não foi possível iniciar sessão. Verifique os dados.', 'error');
@@ -47,6 +55,7 @@ export function Account() {
 
   const submitRegister = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     if (!registerForm.name.trim() || !emailValid(registerForm.email) || !registerForm.phone.trim() || registerForm.password.trim().length < 6) {
       showToast('Preencha o nome, email, número de telemóvel e uma palavra-passe com pelo menos 6 caracteres.', 'error');
       return;
@@ -55,7 +64,10 @@ export function Account() {
       showToast('As palavras-passe não coincidem.', 'error');
       return;
     }
-    if (await register(registerForm.name, registerForm.email, registerForm.password, registerForm.phone)) {
+    setBusy(true);
+    const success = await register(registerForm.name, registerForm.email, registerForm.password, registerForm.phone);
+    setBusy(false);
+    if (success) {
       showToast('Conta criada com sucesso.');
       setProfile({ name: registerForm.name, email: registerForm.email, phone: registerForm.phone });
     } else {
@@ -65,15 +77,18 @@ export function Account() {
 
   const submitLost = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     if (!emailValid(lostEmail)) {
       showToast('Indique um email válido.', 'error');
       return;
     }
+    setBusy(true);
     const response = await fetch('/api/auth/password-reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: lostEmail }),
     });
+    setBusy(false);
     if (response.ok) {
       setLostSent(true);
       showToast('Se a conta existir, receberá instruções por email.', 'info');
@@ -163,77 +178,64 @@ export function Account() {
           </div>
         </div>
       ) : (
-        <div className="auth-card">
-          <Tabs
-            tabs={[
-              { id: 'login', label: 'Entrar' },
-              { id: 'register', label: 'Criar conta' },
-            ]}
-            active={mode === 'lost' ? 'login' : mode}
-            onChange={(id) => { setMode(id as Mode); setLostSent(false); }}
-            ariaLabel="Acesso à conta"
-          />
+        <div className="auth-layout">
+          <aside className="auth-hero" aria-label="Experiência GameAO">
+            <div className="auth-hero__image" />
+            <div className="auth-hero__overlay" />
+            <div className="auth-hero__content">
+              <img src="/assets/gameao-logo.png" alt="GameAO" className="auth-hero__logo" />
+              <p className="page-kicker">A tua próxima partida começa aqui</p>
+              <h2>Entra no universo GameAO.</h2>
+              <p>Guarda os teus favoritos, acompanha as compras e recebe uma experiência feita para quem joga.</p>
+              <div className="auth-hero__points"><span><Icon name="check" /> Catálogo selecionado</span><span><Icon name="check" /> Entrega digital rápida</span><span><Icon name="check" /> Apoio local em Angola</span></div>
+            </div>
+          </aside>
+          <div className="auth-card">
+            <Tabs
+              tabs={[
+                { id: 'login', label: 'Entrar' },
+                { id: 'register', label: 'Criar conta' },
+              ]}
+              active={mode === 'lost' ? 'login' : mode}
+              onChange={(id) => { setMode(id as Mode); setLostSent(false); setBusy(false); }}
+              ariaLabel="Acesso à conta"
+            />
 
-          {mode === 'login' && (
-            <form className="auth-form" onSubmit={submitLogin} noValidate>
-              <h2>Entrar na sua conta</h2>
-              <label className="field">
-                <span>Email ou nome de utilizador *</span>
-                <input type="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} autoComplete="username" />
-              </label>
-              <label className="field">
-                <span>Palavra-passe *</span>
-                <input type="password" value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} autoComplete="current-password" />
-              </label>
-              <label className="checkbox">
-                <input type="checkbox" /> <span>Lembrar-me neste dispositivo</span>
-              </label>
-              <button type="submit" className="btn btn--primary btn--block">Entrar</button>
-              <button type="button" className="auth-link" onClick={() => setMode('lost')}>Perdeu a palavra-passe?</button>
-            </form>
-          )}
+            {mode === 'login' && (
+              <form className="auth-form" onSubmit={submitLogin} noValidate>
+                <p className="auth-form__eyebrow">Bem-vindo de volta</p><h2>Entra na tua conta</h2>
+                <p className="auth-form__intro">Acede ao teu espaço GameAO e continua de onde paraste.</p>
+                <label className="field"><span>Email *</span><input type="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} autoComplete="username" placeholder="nome@exemplo.com" /></label>
+                <label className="field"><span>Palavra-passe *</span><div className="auth-password"><input type={showLoginPassword ? 'text' : 'password'} value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} autoComplete="current-password" placeholder="A tua palavra-passe" /><button type="button" onClick={() => setShowLoginPassword((current) => !current)} aria-label={showLoginPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}>{showLoginPassword ? 'Ocultar' : 'Mostrar'}</button></div></label>
+                <div className="auth-form__options"><label className="checkbox"><input type="checkbox" /> <span>Lembrar-me neste dispositivo</span></label><button type="button" className="auth-link" onClick={() => setMode('lost')}>Recuperar acesso</button></div>
+                <button type="submit" className="btn btn--primary btn--block auth-submit" disabled={busy}>{busy ? 'A entrar…' : 'Entrar na conta'}</button>
+                <p className="auth-switch">Ainda não tens conta? <button type="button" onClick={() => setMode('register')}>Criar conta grátis</button></p>
+              </form>
+            )}
 
-          {mode === 'register' && (
-            <form className="auth-form" onSubmit={submitRegister} noValidate>
-              <h2>Criar uma conta</h2>
-              <p>Registe-se para guardar favoritos, comparações e o histórico de compras.</p>
-              <label className="field">
-                <span>Nome completo *</span>
-                <input value={registerForm.name} onChange={(event) => setRegisterForm((current) => ({ ...current, name: event.target.value }))} autoComplete="name" />
-              </label>
-              <label className="field">
-                <span>Email *</span>
-                <input type="email" value={registerForm.email} onChange={(event) => setRegisterForm((current) => ({ ...current, email: event.target.value }))} autoComplete="email" />
-              </label>
-              <label className="field">
-                <span>Número de telemóvel *</span>
-                <input type="tel" value={registerForm.phone} onChange={(event) => setRegisterForm((current) => ({ ...current, phone: event.target.value }))} autoComplete="tel" placeholder="+244 9XX XXX XXX" />
-              </label>
-              <label className="field">
-                <span>Palavra-passe *</span>
-                <input type="password" value={registerForm.password} onChange={(event) => setRegisterForm((current) => ({ ...current, password: event.target.value }))} autoComplete="new-password" />
-              </label>
-              <label className="field">
-                <span>Confirmar palavra-passe *</span>
-                <input type="password" value={registerForm.confirm} onChange={(event) => setRegisterForm((current) => ({ ...current, confirm: event.target.value }))} autoComplete="new-password" />
-              </label>
-              <button type="submit" className="btn btn--primary btn--block">Criar conta</button>
-            </form>
-          )}
+            {mode === 'register' && (
+              <form className="auth-form" onSubmit={submitRegister} noValidate>
+                <p className="auth-form__eyebrow">Junta-te à comunidade</p><h2>Cria a tua conta</h2>
+                <p className="auth-form__intro">Regista-te para guardar favoritos, comparações e o teu histórico de compras.</p>
+                <div className="form-row"><label className="field"><span>Nome completo *</span><input value={registerForm.name} onChange={(event) => setRegisterForm((current) => ({ ...current, name: event.target.value }))} autoComplete="name" placeholder="O teu nome" /></label><label className="field"><span>Telemóvel *</span><input type="tel" value={registerForm.phone} onChange={(event) => setRegisterForm((current) => ({ ...current, phone: event.target.value }))} autoComplete="tel" placeholder="+244 9XX XXX XXX" /></label></div>
+                <label className="field"><span>Email *</span><input type="email" value={registerForm.email} onChange={(event) => setRegisterForm((current) => ({ ...current, email: event.target.value }))} autoComplete="email" placeholder="nome@exemplo.com" /></label>
+                <label className="field"><span>Palavra-passe *</span><div className="auth-password"><input type={showRegisterPassword ? 'text' : 'password'} value={registerForm.password} onChange={(event) => setRegisterForm((current) => ({ ...current, password: event.target.value }))} autoComplete="new-password" placeholder="Mínimo de 6 caracteres" /><button type="button" onClick={() => setShowRegisterPassword((current) => !current)}>{showRegisterPassword ? 'Ocultar' : 'Mostrar'}</button></div></label>
+                <label className="field"><span>Confirmar palavra-passe *</span><div className="auth-password"><input type={showRegisterConfirm ? 'text' : 'password'} value={registerForm.confirm} onChange={(event) => setRegisterForm((current) => ({ ...current, confirm: event.target.value }))} autoComplete="new-password" placeholder="Repete a palavra-passe" /><button type="button" onClick={() => setShowRegisterConfirm((current) => !current)}>{showRegisterConfirm ? 'Ocultar' : 'Mostrar'}</button></div></label>
+                <button type="submit" className="btn btn--primary btn--block auth-submit" disabled={busy}>{busy ? 'A criar conta…' : 'Criar a minha conta'}</button>
+                <p className="auth-terms">Ao criar uma conta, concordas com a utilização dos teus dados para gerir pedidos e melhorar a tua experiência.</p>
+              </form>
+            )}
 
-          {mode === 'lost' && (
-            <form className="auth-form" onSubmit={submitLost} noValidate>
-              <h2>Recuperar palavra-passe</h2>
-              <p>Indique o email associado à conta. Se o serviço de email estiver configurado, receberá instruções para definir uma nova palavra-passe.</p>
-              <label className="field">
-                <span>Email *</span>
-                <input type="email" value={lostEmail} onChange={(event) => setLostEmail(event.target.value)} autoComplete="email" />
-              </label>
-              {lostSent && <div className="form-success">Pedido registado. Se a conta existisse, receberia instruções por email.</div>}
-              <button type="submit" className="btn btn--primary btn--block">Enviar pedido</button>
-              <button type="button" className="auth-link" onClick={() => setMode('login')}>← Voltar ao início de sessão</button>
-            </form>
-          )}
+            {mode === 'lost' && (
+              <form className="auth-form" onSubmit={submitLost} noValidate>
+                <p className="auth-form__eyebrow">Recuperação segura</p><h2>Recuperar acesso</h2><p className="auth-form__intro">Indica o email associado à tua conta. Se o serviço estiver configurado, receberás instruções para definir uma nova palavra-passe.</p>
+                <label className="field"><span>Email *</span><input type="email" value={lostEmail} onChange={(event) => setLostEmail(event.target.value)} autoComplete="email" placeholder="nome@exemplo.com" /></label>
+                {lostSent && <div className="form-success">Pedido registado. Se a conta existir, receberás instruções por email.</div>}
+                <button type="submit" className="btn btn--primary btn--block auth-submit" disabled={busy}>{busy ? 'A enviar…' : 'Enviar instruções'}</button>
+                <button type="button" className="auth-link" onClick={() => setMode('login')}>← Voltar ao início de sessão</button>
+              </form>
+            )}
+          </div>
         </div>
       )}
     </PageShell>
