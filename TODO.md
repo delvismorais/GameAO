@@ -215,3 +215,11 @@
 - [x] A interface apresenta o erro seguro enviado pelo backend e oferece nova tentativa sem duplicar a pergunta no histórico.
 - [x] Em HTTP 429 da Groq, a resposta explica a indisponibilidade e respeita o cabeçalho `Retry-After` quando fornecido; a chave e o modelo existentes não foram consultados nem alterados.
 - [x] Fixtures sintéticas, typecheck, build e diff-check passaram; não foi feita chamada pública ao assistente.
+
+
+## 26. Autenticação inspirada no Login Page V04 — novembro de 2026
+
+- [x] Adaptar a composição visual do Colorlib Login Page V04 com fundo visual contínuo, conteúdo de marca sobreposto, cartão translúcido de formulário, abas Entrar/Criar conta, campos com foco claro e controlo acessível de palavra-passe; não copiar código, textos, marca ou ativos proprietários da referência.
+- [x] Reutilizar `public/assets/auth-switch.jpg` como imagem de fundo gaming, com contraste suficiente para a leitura e sem substituir a imagem por um placeholder genérico.
+- [x] Preservar login, registo, recuperação de palavra-passe, sessões, telefone e endpoints existentes, incluindo nome, email, telemóvel, palavra-passe e confirmação no registo.
+- [x] Validar com `pnpm typecheck`, `pnpm build`, `git diff --check` e inspeção visual desktop/mobile antes do commit e publicação.

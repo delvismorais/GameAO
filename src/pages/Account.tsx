@@ -109,7 +109,7 @@ export function Account() {
 
   useSeo({ title: 'A minha conta | GameAO', path: '/my-account', noindex: true });
   return (
-    <PageShell crumbs={[{ label: 'Minha Conta' }]}>
+    <PageShell crumbs={[{ label: 'Minha Conta' }]} className={user ? '' : 'auth-page'}>
       <h1 className="page-title">Minha Conta</h1>
 
       {user ? (
